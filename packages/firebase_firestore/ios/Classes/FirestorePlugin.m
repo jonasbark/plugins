@@ -69,7 +69,10 @@ FIRQuery *getQuery(NSDictionary *arguments) {
           if (error) result(error.flutterError);
           NSMutableArray *documents = [NSMutableArray array];
           for (FIRDocumentSnapshot *document in snapshot.documents) {
-            [documents addObject:document.data];
+              [documents addObject: @{
+                                      @"path": document.documentID,
+                                      @"document": [self convertReferencesToPath:document.data.mutableCopy]
+                                      }];
           }
           NSMutableArray *documentChanges = [NSMutableArray array];
           for (FIRDocumentChange *documentChange in snapshot.documentChanges) {
@@ -87,7 +90,8 @@ FIRQuery *getQuery(NSDictionary *arguments) {
             }
             [documentChanges addObject:@{
               @"type" : type,
-              @"document" : documentChange.document.data,
+              @"path" : documentChange.document.documentID,
+              @"document" : [self convertReferencesToPath:documentChange.document.data.mutableCopy],
               @"oldIndex" : [NSNumber numberWithUnsignedInteger:documentChange.oldIndex],
               @"newIndex" : [NSNumber numberWithUnsignedInteger:documentChange.newIndex],
             }];
@@ -111,7 +115,8 @@ FIRQuery *getQuery(NSDictionary *arguments) {
           [self.channel invokeMethod:@"DocumentSnapshot"
                            arguments:@{
                              @"handle" : handle,
-                             @"data" : snapshot.exists ? snapshot.data : [NSNull null],
+                             @"path" : snapshot.documentID,
+                             @"data" : snapshot.exists ? [self convertReferencesToPath:snapshot.data.mutableCopy] : [NSNull null],
                            }];
         }];
     _listeners[handle] = listener;
@@ -121,9 +126,22 @@ FIRQuery *getQuery(NSDictionary *arguments) {
     [[_listeners objectForKey:handle] remove];
     [_listeners removeObjectForKey:handle];
     result(nil);
+  } else if ([@"DocumentReference#delete" isEqualToString:call.method]) {
+      NSString *path = call.arguments[@"path"];
+      FIRDocumentReference *reference = [[FIRFirestore firestore] documentWithPath:path];
+      [reference deleteDocumentWithCompletion:defaultCompletionBlock];
   } else {
     result(FlutterMethodNotImplemented);
   }
 }
 
+-(NSDictionary*)convertReferencesToPath:(NSMutableDictionary<NSString*, NSObject*>*) data {
+    NSArray<NSString*>* keys = data.allKeys;
+    for (NSString* key in keys) {
+        if ([data[key] isKindOfClass:[FIRDocumentReference class]]) {
+            data[key] = ((FIRDocumentReference*)data[key]).path;
+        }
+    }
+    return data;
+}
 @end
