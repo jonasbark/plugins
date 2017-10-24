@@ -10,10 +10,11 @@ part of firebase_firestore;
 /// The data can be extracted with the data property or by using subscript
 /// syntax to access a specific field.
 class DocumentSnapshot {
+  final String path;
   /// Contains all the data of this snapshot
   final Map<String, dynamic> data;
 
-  DocumentSnapshot._(this.data);
+  DocumentSnapshot._(this.path, this.data);
 
   /// Reads individual values from the snapshot
   dynamic operator [](String key) => data[key];

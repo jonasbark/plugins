@@ -16,7 +16,7 @@ class QuerySnapshot {
   QuerySnapshot._(Map<String, List<Map<String, dynamic>>> data)
       : documents = new List<DocumentSnapshot>.generate(
             data['documents'].length, (int index) {
-          return new DocumentSnapshot._(data['documents'][index]);
+          return new DocumentSnapshot._(data['documents'][index]['path'], data['documents'][index]['document']);
         }),
         documentChanges = new List<DocumentChange>.generate(
             data['documentChanges'].length, (int index) {
