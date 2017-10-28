@@ -60,7 +60,70 @@ public class FirestorePlugin implements MethodCallHandler {
     }
 
     private Query getQuery(Map<String, Object> arguments) {
-        return getCollectionReference(arguments);
+        Query query = getCollectionReference(arguments);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parameters = (Map<String, Object>) arguments.get("parameters");
+        if (parameters == null) return query;
+        Object orderBy = parameters.get("orderBy");
+        if ("key".equals(orderBy)) {
+            query = query.orderBy((String) parameters.get("orderByKey"));
+            //TODO direction
+        }
+        if (parameters.containsKey("startAt")) {
+            Object startAt = parameters.get("startAt");
+            if (parameters.containsKey("startAtKey")) {
+                String startAtKey = (String) parameters.get("startAtKey");
+                if (startAt instanceof Boolean) {
+                    query = query.startAt((Boolean) startAt, startAtKey);
+                } else if (startAt instanceof String) {
+                    query = query.startAt((String) startAt, startAtKey);
+                } else {
+                    query = query.startAt(((Number) startAt).doubleValue(), startAtKey);
+                }
+            } else {
+                if (startAt instanceof Boolean) {
+                    query = query.startAt((Boolean) startAt);
+                } else if (startAt instanceof String) {
+                    query = query.startAt((String) startAt);
+                } else {
+                    query = query.startAt(((Number) startAt).doubleValue());
+                }
+            }
+        }
+        if (parameters.containsKey("endAt")) {
+            Object endAt = parameters.get("endAt");
+            if (parameters.containsKey("endAtKey")) {
+                String endAtKey = (String) parameters.get("endAtKey");
+                if (endAt instanceof Boolean) {
+                    query = query.endAt((Boolean) endAt, endAtKey);
+                } else if (endAt instanceof String) {
+                    query = query.endAt((String) endAt, endAtKey);
+                } else {
+                    query = query.endAt(((Number) endAt).doubleValue(), endAtKey);
+                }
+            } else {
+                if (endAt instanceof Boolean) {
+                    query = query.endAt((Boolean) endAt);
+                } else if (endAt instanceof String) {
+                    query = query.endAt((String) endAt);
+                } else {
+                    query = query.endAt(((Number) endAt).doubleValue());
+                }
+            }
+        }
+        if (parameters.containsKey("equalTo")) {
+            Object equalTo = parameters.get("equalTo");
+            if (equalTo instanceof Boolean || equalTo instanceof String) {
+                query = query.whereEqualTo((String) parameters.get("equalToKey"), equalTo);
+            } else {
+                query = query.whereEqualTo((String) parameters.get("equalToKey"), ((Number) equalTo).doubleValue());
+            }
+        }
+        if (parameters.containsKey("limit")) {
+            query = query.limit((long) parameters.get("limit"));
+        }
+        return query;
     }
 
     private class DocumentObserver implements EventListener<DocumentSnapshot> {
