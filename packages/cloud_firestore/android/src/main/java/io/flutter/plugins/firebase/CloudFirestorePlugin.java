@@ -125,7 +125,7 @@ public class CloudFirestorePlugin implements MethodCallHandler {
     }
 
 
-    private Object convertReferencesToPath(final Map<String, Object> data) {
+    private Map<String, Object> convertReferencesToPath(final Map<String, Object> data) {
         Set<String> keys = data.keySet();
         for (final String key : keys) {
             if (data.get(key) instanceof DocumentReference) { //not supported => replace by path
