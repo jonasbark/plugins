@@ -46,6 +46,9 @@ public class FirebaseStoragePlugin implements MethodCallHandler {
       case "StorageReference#getData":
         getData(call, result);
         break;
+      case "StorageReference#delete":
+          deleteFile(call, result);
+          break;
       default:
         result.notImplemented();
         break;
@@ -57,6 +60,7 @@ public class FirebaseStoragePlugin implements MethodCallHandler {
     String filename = arguments.get("filename");
     String path = arguments.get("path");
     File file = new File(filename);
+
     StorageReference ref = firebaseStorage.getReference().child(path);
     UploadTask uploadTask = ref.putFile(Uri.fromFile(file));
     uploadTask.addOnSuccessListener(
@@ -96,4 +100,26 @@ public class FirebaseStoragePlugin implements MethodCallHandler {
           }
         });
   }
+
+    private void deleteFile(MethodCall call, final Result result) {
+        Map<String, Object> arguments = (Map<String, Object>) call.arguments;
+        String path = (String) arguments.get("path");
+        StorageReference ref = firebaseStorage.getReference().child(path);
+        Task<Void> deleteTask = ref.delete();
+
+        deleteTask.addOnSuccessListener(
+                new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void res) {
+                        result.success(null);
+                    }
+                });
+        deleteTask.addOnFailureListener(
+                new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        result.error("download_error", e.getMessage(), null);
+                    }
+                });
+    }
 }
