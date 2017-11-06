@@ -25,13 +25,6 @@ class Query {
   /// (relative to the root of the database).
   String get path => _pathComponents.join('/');
 
-  Map<String, dynamic> buildArguments() {
-    return new Map<String, dynamic>.from(_parameters)
-      ..addAll(<String, dynamic>{
-        'path': path,
-      });
-  }
-
   /// Notifies of query results at this location
   // TODO(jackson): Reduce code duplication with [DocumentReference]
   Stream<QuerySnapshot> get snapshots {
