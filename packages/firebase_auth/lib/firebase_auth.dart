@@ -61,6 +61,11 @@ class FirebaseUser extends UserInfo {
     });
   }
 
+
+  Future<String> sendEmailVerification() {
+    return FirebaseAuth.channel.invokeMethod('sendEmailVerification', <String, bool>{});
+  }
+
   @override
   String toString() {
     return '$runtimeType($_data)';

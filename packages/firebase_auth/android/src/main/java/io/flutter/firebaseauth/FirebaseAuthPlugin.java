@@ -96,6 +96,9 @@ public class FirebaseAuthPlugin implements MethodCallHandler {
       case "stopListeningAuthState":
         handleStopListeningAuthState(call, result);
         break;
+      case "sendEmailVerification":
+        handleEmailVerification(call, result);
+        break;
       default:
         result.notImplemented();
         break;
@@ -146,6 +149,22 @@ public class FirebaseAuthPlugin implements MethodCallHandler {
         .createUserWithEmailAndPassword(email, password)
         .addOnCompleteListener(activity, new SignInCompleteListener(result));
   }
+
+  private void handleEmailVerification(MethodCall call, final Result result) {
+    firebaseAuth
+            .getCurrentUser()
+            .sendEmailVerification()
+            .addOnCompleteListener(activity, new OnCompleteListener<Void>() {
+              public void onComplete(@NonNull Task task) {
+                if (task.isSuccessful()) {
+                  result.success(null);
+                } else {
+                  result.error(ERROR_REASON_EXCEPTION, task.getException().getMessage(), null);
+                }
+              }
+            });
+  }
+
 
   private void handleSignInWithEmailAndPassword(MethodCall call, final Result result) {
     @SuppressWarnings("unchecked")

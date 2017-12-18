@@ -171,6 +171,10 @@ int nextHandle = 0;
                                                    identifier.intValue]
                 details:nil]);
     }
+  } else if ([@"sendEmailVerification" isEqualToString:call.method]) {
+      [[FIRAuth auth].currentUser sendEmailVerificationWithCompletion:^(NSError * _Nullable error) {
+          [self sendResult:result forUser:[FIRAuth auth].currentUser error:error];
+      }];
   } else {
     result(FlutterMethodNotImplemented);
   }
