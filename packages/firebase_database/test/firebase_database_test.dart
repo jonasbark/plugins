@@ -4,6 +4,7 @@
 
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,7 +17,17 @@ void main() {
 
     int mockHandleId = 0;
     final List<MethodCall> log = <MethodCall>[];
-    final FirebaseDatabase database = FirebaseDatabase.instance;
+    final FirebaseApp app = const FirebaseApp(
+      name: 'testApp',
+      options: const FirebaseOptions(
+        googleAppID: '1:1234567890:ios:42424242424242',
+        gcmSenderID: '1234567890',
+        databaseURL: 'https://fake-database-url.firebaseio.com',
+      ),
+    );
+    final String databaseURL = 'https://fake-database-url2.firebaseio.com';
+    final FirebaseDatabase database =
+        new FirebaseDatabase(app: app, databaseURL: databaseURL);
 
     setUp(() async {
       channel.setMockMethodCallHandler((MethodCall methodCall) async {
@@ -82,11 +93,19 @@ void main() {
         <Matcher>[
           isMethodCall(
             'FirebaseDatabase#setPersistenceEnabled',
-            arguments: false,
+            arguments: <String, dynamic>{
+              'app': app.name,
+              'databaseURL': databaseURL,
+              'enabled': false,
+            },
           ),
           isMethodCall(
             'FirebaseDatabase#setPersistenceEnabled',
-            arguments: true,
+            arguments: <String, dynamic>{
+              'app': app.name,
+              'databaseURL': databaseURL,
+              'enabled': true,
+            },
           ),
         ],
       );
@@ -99,7 +118,11 @@ void main() {
         <Matcher>[
           isMethodCall(
             'FirebaseDatabase#setPersistenceCacheSizeBytes',
-            arguments: 42,
+            arguments: <String, dynamic>{
+              'app': app.name,
+              'databaseURL': databaseURL,
+              'cacheSize': 42,
+            },
           ),
         ],
       );
@@ -110,7 +133,13 @@ void main() {
       expect(
         log,
         <Matcher>[
-          isMethodCall('FirebaseDatabase#goOnline', arguments: null),
+          isMethodCall(
+            'FirebaseDatabase#goOnline',
+            arguments: <String, dynamic>{
+              'app': app.name,
+              'databaseURL': databaseURL,
+            },
+          ),
         ],
       );
     });
@@ -120,7 +149,13 @@ void main() {
       expect(
         log,
         <Matcher>[
-          isMethodCall('FirebaseDatabase#goOffline', arguments: null),
+          isMethodCall(
+            'FirebaseDatabase#goOffline',
+            arguments: <String, dynamic>{
+              'app': app.name,
+              'databaseURL': databaseURL,
+            },
+          ),
         ],
       );
     });
@@ -132,7 +167,10 @@ void main() {
         <Matcher>[
           isMethodCall(
             'FirebaseDatabase#purgeOutstandingWrites',
-            arguments: null,
+            arguments: <String, dynamic>{
+              'app': app.name,
+              'databaseURL': databaseURL,
+            },
           ),
         ],
       );
@@ -150,6 +188,8 @@ void main() {
             isMethodCall(
               'DatabaseReference#set',
               arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
                 'path': 'foo',
                 'value': value,
                 'priority': null,
@@ -158,6 +198,8 @@ void main() {
             isMethodCall(
               'DatabaseReference#set',
               arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
                 'path': 'bar',
                 'value': value,
                 'priority': priority,
@@ -174,7 +216,12 @@ void main() {
           <Matcher>[
             isMethodCall(
               'DatabaseReference#update',
-              arguments: <String, dynamic>{'path': 'foo', 'value': value},
+              arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
+                'path': 'foo',
+                'value': value,
+              },
             ),
           ],
         );
@@ -188,7 +235,12 @@ void main() {
           <Matcher>[
             isMethodCall(
               'DatabaseReference#setPriority',
-              arguments: <String, dynamic>{'path': 'foo', 'priority': priority},
+              arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
+                'path': 'foo',
+                'priority': priority,
+              },
             ),
           ],
         );
@@ -211,6 +263,8 @@ void main() {
             isMethodCall(
               'DatabaseReference#runTransaction',
               arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
                 'path': 'foo',
                 'transactionKey': 0,
                 'transactionTimeout': 5000,
@@ -243,6 +297,8 @@ void main() {
             isMethodCall(
               'Query#keepSynced',
               arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
                 'path': path,
                 'parameters': <String, dynamic>{},
                 'value': true,
@@ -277,6 +333,8 @@ void main() {
             isMethodCall(
               'Query#keepSynced',
               arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
                 'path': path,
                 'parameters': expectedParameters,
                 'value': false
@@ -284,6 +342,48 @@ void main() {
             ),
           ],
         );
+      });
+      test('observing error events', () async {
+        mockHandleId = 99;
+        const int errorCode = 12;
+        const String errorDetails = 'Some details';
+        final Query query = database.reference().child('some path');
+        Future<Null> simulateError(String errorMessage) async {
+          await BinaryMessages.handlePlatformMessage(
+            channel.name,
+            channel.codec.encodeMethodCall(
+              new MethodCall('Error', <String, dynamic>{
+                'handle': 99,
+                'error': <String, dynamic>{
+                  'code': errorCode,
+                  'message': errorMessage,
+                  'details': errorDetails,
+                },
+              }),
+            ),
+            (_) {},
+          );
+        }
+
+        final AsyncQueue<DatabaseError> errors =
+            new AsyncQueue<DatabaseError>();
+
+        // Subscribe and allow subscription to complete.
+        final StreamSubscription<Event> subscription =
+            query.onValue.listen((_) {}, onError: errors.add);
+        await new Future<Null>.delayed(const Duration(seconds: 0));
+
+        await simulateError('Bad foo');
+        await simulateError('Bad bar');
+        final DatabaseError error1 = await errors.remove();
+        final DatabaseError error2 = await errors.remove();
+        subscription.cancel();
+        expect(error1.code, errorCode);
+        expect(error1.message, 'Bad foo');
+        expect(error1.details, errorDetails);
+        expect(error2.code, errorCode);
+        expect(error2.message, 'Bad bar');
+        expect(error2.details, errorDetails);
       });
       test('observing value events', () async {
         mockHandleId = 87;
@@ -331,6 +431,8 @@ void main() {
             isMethodCall(
               'Query#observe',
               arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
                 'path': path,
                 'parameters': <String, dynamic>{},
                 'eventType': '_EventType.value',
@@ -339,6 +441,8 @@ void main() {
             isMethodCall(
               'Query#removeObserver',
               arguments: <String, dynamic>{
+                'app': app.name,
+                'databaseURL': databaseURL,
                 'path': path,
                 'parameters': <String, dynamic>{},
                 'handle': 87,
