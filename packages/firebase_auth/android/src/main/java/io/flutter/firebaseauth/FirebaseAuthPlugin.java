@@ -147,7 +147,7 @@ public class FirebaseAuthPlugin implements MethodCallHandler {
     firebaseAuth
             .getCurrentUser()
             .sendEmailVerification()
-            .addOnCompleteListener(activity, new OnCompleteListener<Void>() {
+            .addOnCompleteListener(new OnCompleteListener<Void>() {
               public void onComplete(@NonNull Task task) {
                 if (task.isSuccessful()) {
                   result.success(null);
