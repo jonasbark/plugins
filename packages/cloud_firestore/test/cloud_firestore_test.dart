@@ -18,6 +18,7 @@ void main() {
     final Firestore firestore = Firestore.instance;
     final List<MethodCall> log = <MethodCall>[];
     final CollectionReference collectionReference = firestore.collection('foo');
+    final Transaction transaction = new Transaction(0);
     const Map<String, dynamic> kMockDocumentSnapshotData =
         const <String, dynamic>{'1': 2};
 
@@ -62,6 +63,19 @@ void main() {
               (_) {},
             );
             return handle;
+          case 'Query#getDocuments':
+            return <String, dynamic>{
+              'paths': <String>["${methodCall.arguments['path']}/0"],
+              'documents': <dynamic>[kMockDocumentSnapshotData],
+              'documentChanges': <dynamic>[
+                <String, dynamic>{
+                  'oldIndex': -1,
+                  'newIndex': 0,
+                  'type': 'DocumentChangeType.added',
+                  'document': kMockDocumentSnapshotData,
+                },
+              ],
+            };
           case 'DocumentReference#setData':
             return true;
           case 'DocumentReference#get':
@@ -72,11 +86,100 @@ void main() {
               };
             }
             throw new PlatformException(code: 'UNKNOWN_PATH');
+          case 'Firestore#runTransaction':
+            return <String, dynamic>{'1': 3};
+          case 'Transaction#get':
+            return <String, dynamic>{
+              'path': 'foo/bar',
+              'data': <String, dynamic>{'key1': 'val1'}
+            };
+          case 'Transaction#set':
+            return null;
+          case 'Transaction#update':
+            return null;
+          case 'Transaction#delete':
+            return null;
           default:
             return null;
         }
       });
       log.clear();
+    });
+
+    group('Transaction', () {
+      test('runTransaction', () async {
+        final Map<String, dynamic> result = await firestore.runTransaction(
+            (Transaction tx) async {},
+            timeout: new Duration(seconds: 3));
+
+        expect(log, <Matcher>[
+          isMethodCall('Firestore#runTransaction', arguments: <String, dynamic>{
+            'transactionId': 0,
+            'transactionTimeout': 3000
+          }),
+        ]);
+        expect(result, equals(<String, dynamic>{'1': 3}));
+      });
+
+      test('get', () async {
+        final DocumentReference documentReference =
+            Firestore.instance.document('foo/bar');
+        await transaction.get(documentReference);
+        expect(log, <Matcher>[
+          isMethodCall('Transaction#get', arguments: <String, dynamic>{
+            'transactionId': 0,
+            'path': documentReference.path
+          })
+        ]);
+      });
+
+      test('delete', () async {
+        final DocumentReference documentReference =
+            Firestore.instance.document('foo/bar');
+        await transaction.delete(documentReference);
+        expect(log, <Matcher>[
+          isMethodCall('Transaction#delete', arguments: <String, dynamic>{
+            'transactionId': 0,
+            'path': documentReference.path
+          })
+        ]);
+      });
+
+      test('update', () async {
+        final DocumentReference documentReference =
+            Firestore.instance.document('foo/bar');
+        final DocumentSnapshot documentSnapshot = await documentReference.get();
+        final Map<String, dynamic> data = documentSnapshot.data;
+        data['key2'] = 'val2';
+        await transaction.set(documentReference, data);
+        expect(log, <Matcher>[
+          isMethodCall('DocumentReference#get',
+              arguments: <String, dynamic>{'path': 'foo/bar'}),
+          isMethodCall('Transaction#set', arguments: <String, dynamic>{
+            'transactionId': 0,
+            'path': documentReference.path,
+            'data': <String, dynamic>{'key1': 'val1', 'key2': 'val2'}
+          })
+        ]);
+      });
+
+      test('set', () async {
+        final DocumentReference documentReference =
+            Firestore.instance.document('foo/bar');
+        final DocumentSnapshot documentSnapshot = await documentReference.get();
+        final Map<String, dynamic> data = documentSnapshot.data;
+        data['key2'] = 'val2';
+        await transaction.set(documentReference, data);
+        expect(log, <Matcher>[
+          isMethodCall('DocumentReference#get',
+              arguments: <String, dynamic>{'path': 'foo/bar'}),
+          isMethodCall('Transaction#set', arguments: <String, dynamic>{
+            'transactionId': 0,
+            'path': documentReference.path,
+            'data': <String, dynamic>{'key1': 'val1', 'key2': 'val2'}
+          })
+        ]);
+      });
     });
 
     group('CollectionsReference', () {
@@ -315,6 +418,33 @@ void main() {
         final CollectionReference colRef =
             collectionReference.document('bar').getCollection('baz');
         expect(colRef.path, 'foo/bar/baz');
+      });
+    });
+
+    group('Query', () {
+      test('getDocuments', () async {
+        final QuerySnapshot snapshot = await collectionReference.getDocuments();
+        final DocumentSnapshot document = snapshot.documents.first;
+        expect(
+          log,
+          equals(
+            <Matcher>[
+              isMethodCall(
+                'Query#getDocuments',
+                arguments: <String, dynamic>{
+                  'path': 'foo',
+                  'parameters': <String, dynamic>{
+                    'where': <List<dynamic>>[],
+                    'orderBy': <List<dynamic>>[],
+                  },
+                },
+              ),
+            ],
+          ),
+        );
+        expect(document.documentID, equals('0'));
+        expect(document.reference.path, equals('foo/0'));
+        expect(document.data, equals(kMockDocumentSnapshotData));
       });
     });
   });

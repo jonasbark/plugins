@@ -78,6 +78,42 @@ FIRQuery *getQuery(NSDictionary *arguments) {
   return query;
 }
 
+NSDictionary *parseQuerySnapshot(FIRQuerySnapshot *snapshot) {
+  NSMutableArray *paths = [NSMutableArray array];
+  NSMutableArray *documents = [NSMutableArray array];
+  for (FIRDocumentSnapshot *document in snapshot.documents) {
+    [paths addObject:document.reference.path];
+    [documents addObject:document.data];
+  }
+  NSMutableArray *documentChanges = [NSMutableArray array];
+  for (FIRDocumentChange *documentChange in snapshot.documentChanges) {
+    NSString *type;
+    switch (documentChange.type) {
+      case FIRDocumentChangeTypeAdded:
+        type = @"DocumentChangeType.added";
+        break;
+      case FIRDocumentChangeTypeModified:
+        type = @"DocumentChangeType.modified";
+        break;
+      case FIRDocumentChangeTypeRemoved:
+        type = @"DocumentChangeType.removed";
+        break;
+    }
+    [documentChanges addObject:@{
+      @"type" : type,
+      @"document" : documentChange.document.data,
+      @"path" : documentChange.document.reference.path,
+      @"oldIndex" : [NSNumber numberWithInt:documentChange.oldIndex],
+      @"newIndex" : [NSNumber numberWithInt:documentChange.newIndex],
+    }];
+  }
+  return @{
+    @"paths" : paths,
+    @"documentChanges" : documentChanges,
+    @"documents" : documents,
+  };
+}
+
 @interface FLTCloudFirestorePlugin ()
 @property(nonatomic, retain) FlutterMethodChannel *channel;
 @end
@@ -85,6 +121,8 @@ FIRQuery *getQuery(NSDictionary *arguments) {
 @implementation FLTCloudFirestorePlugin {
   NSMutableDictionary<NSNumber *, id<FIRListenerRegistration>> *_listeners;
   int _nextListenerHandle;
+  NSMutableDictionary *transactions;
+  NSMutableDictionary *transactionResults;
 }
 
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
@@ -104,6 +142,8 @@ FIRQuery *getQuery(NSDictionary *arguments) {
     }
     _listeners = [NSMutableDictionary<NSNumber *, id<FIRListenerRegistration>> dictionary];
     _nextListenerHandle = 0;
+    transactions = [NSMutableDictionary<NSNumber *, FIRTransaction *> dictionary];
+    transactionResults = [NSMutableDictionary<NSNumber *, id> dictionary];
   }
   return self;
 }
@@ -112,7 +152,92 @@ FIRQuery *getQuery(NSDictionary *arguments) {
   void (^defaultCompletionBlock)(NSError *) = ^(NSError *error) {
     result(error.flutterError);
   };
-  if ([@"DocumentReference#setData" isEqualToString:call.method]) {
+  if ([@"Firestore#runTransaction" isEqualToString:call.method]) {
+    [[FIRFirestore firestore] runTransactionWithBlock:^id(FIRTransaction *transaction,
+                                                          NSError **pError) {
+      NSNumber *transactionId = call.arguments[@"transactionId"];
+      NSNumber *transactionTimeout = call.arguments[@"transactionTimeout"];
+
+      transactions[transactionId] = transaction;
+
+      dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+      [self.channel invokeMethod:@"DoTransaction"
+                       arguments:call.arguments
+                          result:^(id doTransactionResult) {
+                            transactionResults[transactionId] = doTransactionResult;
+                            dispatch_semaphore_signal(semaphore);
+                          }];
+
+      dispatch_semaphore_wait(
+          semaphore, dispatch_time(DISPATCH_TIME_NOW, [transactionTimeout integerValue] * 1000000));
+
+      return transactionResults[transactionId];
+    }
+        completion:^(id transactionResult, NSError *error) {
+          if (error != nil) {
+            result([FlutterError errorWithCode:[NSString stringWithFormat:@"%ld", error.code]
+                                       message:error.localizedDescription
+                                       details:nil]);
+          }
+          result(transactionResult);
+        }];
+  } else if ([@"Transaction#get" isEqualToString:call.method]) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+      NSNumber *transactionId = call.arguments[@"transactionId"];
+      NSString *path = call.arguments[@"path"];
+      FIRDocumentReference *documentReference = [[FIRFirestore firestore] documentWithPath:path];
+      FIRTransaction *transaction = transactions[transactionId];
+      NSError *error = [[NSError alloc] init];
+
+      FIRDocumentSnapshot *snapshot = [transaction getDocument:documentReference error:&error];
+
+      if (error != nil) {
+        result([FlutterError errorWithCode:[NSString stringWithFormat:@"%tu", [error code]]
+                                   message:[error localizedDescription]
+                                   details:nil]);
+      } else if (snapshot != nil) {
+        result(@{
+          @"path" : snapshot.reference.path,
+          @"data" : snapshot.exists ? snapshot.data : [NSNull null]
+        });
+      } else {
+        result([FlutterError errorWithCode:@"DOCUMENT_NOT_FOUND"
+                                   message:@"Document not found."
+                                   details:nil]);
+      }
+    });
+  } else if ([@"Transaction#update" isEqualToString:call.method]) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+      NSNumber *transactionId = call.arguments[@"transactionId"];
+      NSString *path = call.arguments[@"path"];
+      FIRDocumentReference *documentReference = [[FIRFirestore firestore] documentWithPath:path];
+      FIRTransaction *transaction = transactions[transactionId];
+
+      [transaction updateData:call.arguments[@"data"] forDocument:documentReference];
+      result(nil);
+    });
+  } else if ([@"Transaction#set" isEqualToString:call.method]) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+      NSNumber *transactionId = call.arguments[@"transactionId"];
+      NSString *path = call.arguments[@"path"];
+      FIRDocumentReference *documentReference = [[FIRFirestore firestore] documentWithPath:path];
+      FIRTransaction *transaction = transactions[transactionId];
+
+      [transaction setData:call.arguments[@"data"] forDocument:documentReference];
+      result(nil);
+    });
+  } else if ([@"Transaction#delete" isEqualToString:call.method]) {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+      NSNumber *transactionId = call.arguments[@"transactionId"];
+      NSString *path = call.arguments[@"path"];
+      FIRDocumentReference *documentReference = [[FIRFirestore firestore] documentWithPath:path];
+      FIRTransaction *transaction = transactions[transactionId];
+
+      [transaction deleteDocument:documentReference];
+      result(nil);
+    });
+  } else if ([@"DocumentReference#setData" isEqualToString:call.method]) {
     NSString *path = call.arguments[@"path"];
     NSDictionary *options = call.arguments[@"options"];
     FIRDocumentReference *reference = [[FIRFirestore firestore] documentWithPath:path];
@@ -213,6 +338,20 @@ FIRQuery *getQuery(NSDictionary *arguments) {
         }];
     _listeners[handle] = listener;
     result(handle);
+  } else if ([@"Query#getDocuments" isEqualToString:call.method]) {
+    FIRQuery *query;
+    @try {
+      query = getQuery(call.arguments);
+    } @catch (NSException *exception) {
+      result([FlutterError errorWithCode:@"invalid_query"
+                                 message:[exception name]
+                                 details:[exception reason]]);
+    }
+    [query getDocumentsWithCompletion:^(FIRQuerySnapshot *_Nullable snapshot,
+                                        NSError *_Nullable error) {
+      if (error) result(error.flutterError);
+      result(parseQuerySnapshot(snapshot));
+    }];
   } else if ([@"Query#removeListener" isEqualToString:call.method]) {
     NSNumber *handle = call.arguments[@"handle"];
     [[_listeners objectForKey:handle] remove];
