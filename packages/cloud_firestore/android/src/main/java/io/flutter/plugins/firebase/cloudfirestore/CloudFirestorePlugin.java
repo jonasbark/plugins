@@ -174,6 +174,11 @@ public class CloudFirestorePlugin implements MethodCallHandler {
 
     @Override
     public void onEvent(DocumentSnapshot documentSnapshot, FirebaseFirestoreException e) {
+        if (e != null) {
+            // TODO: send error
+            System.out.println(e);
+            return;
+        }
       Map<String, Object> arguments = new HashMap<>();
       arguments.put("handle", handle);
       if (documentSnapshot.exists()) {
@@ -199,6 +204,7 @@ public class CloudFirestorePlugin implements MethodCallHandler {
       if (e != null) {
         // TODO: send error
         System.out.println(e);
+        return;
       }
 
       Map<String, Object> arguments = parseQuerySnapshot(querySnapshot);
