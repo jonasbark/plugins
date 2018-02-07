@@ -80,7 +80,7 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
 
       switch (imageSource) {
         case SOURCE_ASK_USER:
-          ImagePicker.create(activity).single().start(REQUEST_CODE_PICK);
+          ImagePicker.create(activity).folderMode(true).single().start(REQUEST_CODE_PICK);
           break;
         case SOURCE_GALLERY:
           ImagePicker.create(activity).single().showCamera(false).start(REQUEST_CODE_PICK);
