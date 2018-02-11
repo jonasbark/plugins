@@ -4,23 +4,20 @@
 
 package io.flutter.plugins.imagepicker;
 
-import static com.imagepicker.FilePickUtils.CAMERA_PERMISSION;
-import static com.imagepicker.FilePickUtils.STORAGE_PERMISSION_IMAGE;
+import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
 import android.app.Activity;
 import android.content.DialogInterface;
 import android.content.DialogInterface.OnClickListener;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.ExifInterface;
 import android.os.Environment;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AlertDialog;
 import android.util.Log;
-import com.imagepicker.AppUtils;
-import com.imagepicker.FilePickUtils;
-import com.imagepicker.FilePickUtils.OnFileChoose;
-import com.imagepicker.LifeCycleCallBackManager;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
@@ -35,9 +32,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import pl.aprilapps.easyphotopicker.DefaultCallback;
+import pl.aprilapps.easyphotopicker.EasyImage;
+import pl.aprilapps.easyphotopicker.EasyImage.ImageSource;
 
 /** Location Plugin */
-public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListener, RequestPermissionsResultListener, OnFileChoose {
+public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListener, RequestPermissionsResultListener {
   private static String TAG = "ImagePicker";
   private static final String CHANNEL = "image_picker";
 
@@ -47,8 +47,6 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
   private static final int SOURCE_ASK_USER = 0;
   private static final int SOURCE_CAMERA = 1;
   private static final int SOURCE_GALLERY = 2;
-
-  private LifeCycleCallBackManager lifeCycleCallBackManager;
 
   private final PluginRegistry.Registrar registrar;
 
@@ -84,75 +82,88 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
     pendingResult = result;
     methodCall = call;
 
-    if (call.method.equals("pickImage")) {
-      int imageSource = call.argument("source");
+    if (checkPermissions()) {
+      performCall();
+    }
 
-      final FilePickUtils filePickUtils = new FilePickUtils(activity, this);
-      lifeCycleCallBackManager = filePickUtils.getCallBackManager();
+  }
 
-      File directory = new File(Environment.getExternalStorageDirectory(), "com.imagepicker");
-      if(!directory.exists()) {
-        directory.mkdirs();
-      }
+  private void performCall() {
+    if (methodCall.method.equals("pickImage")) {
+      int imageSource = methodCall.argument("source");
 
       switch (imageSource) {
         case SOURCE_ASK_USER:
-          new AlertDialog.Builder(activity)
+          new AlertDialog.Builder(registrar.activity())
                   .setItems(new CharSequence[]{"Gallery", "Camera"}, new OnClickListener() {
                     @Override
                     public void onClick(final DialogInterface dialogInterface, final int i) {
                       if (i == 0) {
-                        filePickUtils.requestImageGallery(STORAGE_PERMISSION_IMAGE, true, true);
+                        EasyImage.openChooserWithGallery(registrar.activity(), "", 0);
                       }
                       else {
-                        filePickUtils.requestImageCamera(CAMERA_PERMISSION, true, true);
+                        EasyImage.openCamera(registrar.activity(), 0);
                       }
                     }
                   })
-            .setNegativeButton(android.R.string.cancel, null)
-            .create().show();
+                  .setNegativeButton(android.R.string.cancel, null)
+                  .create().show();
 
           break;
         case SOURCE_GALLERY:
-          filePickUtils.requestImageGallery(STORAGE_PERMISSION_IMAGE, true, true);
+          EasyImage.openChooserWithGallery(registrar.activity(), "", 0);
           break;
         case SOURCE_CAMERA:
-          filePickUtils.requestImageCamera(CAMERA_PERMISSION, true, true);
+          EasyImage.openCamera(registrar.activity(), 0);
           break;
         default:
           throw new IllegalArgumentException("Invalid image source: " + imageSource);
       }
     } else {
-      throw new IllegalArgumentException("Unknown method " + call.method);
+      throw new IllegalArgumentException("Unknown method " + methodCall.method);
     }
   }
 
   @Override
   public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-    if (lifeCycleCallBackManager != null) {
-      lifeCycleCallBackManager.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    if (checkPermissions()) {
+      performCall();
     }
+
     return true;
+  }
+
+  private boolean checkPermissions() {
+    if (ActivityCompat.checkSelfPermission(registrar.activity(), WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+      return true;
+    }
+    else {
+      ActivityCompat.requestPermissions(registrar.activity(), new String[] {WRITE_EXTERNAL_STORAGE}, REQUEST_CODE_CAMERA);
+      return false;
+    }
   }
 
 
   @Override
   public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
     Log.i("IMAGE_PICKER", "RESULT " + data);
-    if (lifeCycleCallBackManager != null && resultCode == Activity.RESULT_OK) {
-      lifeCycleCallBackManager.onActivityResult(requestCode, resultCode, data);
-    }
-    else {
-      pendingResult = null;
-      methodCall = null;
-    }
-    return true;
-  }
 
-  @Override
-  public void onFileChoose(final String path, final int requestCode) {
-    Log.i("IMAGE_PICKER", "CHOSE " + path);
-    handleResult(new File(path));
+    EasyImage.handleActivityResult(requestCode, resultCode, data, registrar.activity(), new DefaultCallback() {
+      @Override
+      public void onImagePickerError(Exception e, EasyImage.ImageSource source, int type) {
+        //Some error handling
+        pendingResult = null;
+        methodCall = null;
+      }
+
+      @Override
+      public void onImagePicked(final File imageFile, final ImageSource source, final int type) {
+        handleResult(imageFile);
+      }
+
+    });
+
+    return true;
   }
 
   private void handleResult(File file) {
