@@ -4,22 +4,30 @@
 
 package io.flutter.plugins.imagepicker;
 
+import static com.imagepicker.FilePickUtils.CAMERA_PERMISSION;
+import static com.imagepicker.FilePickUtils.STORAGE_PERMISSION_IMAGE;
+
 import android.app.Activity;
+import android.content.DialogInterface;
+import android.content.DialogInterface.OnClickListener;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.ExifInterface;
+import android.os.Environment;
+import android.support.v7.app.AlertDialog;
 import android.util.Log;
-import com.esafirm.imagepicker.features.ImagePicker;
-import com.esafirm.imagepicker.features.camera.DefaultCameraModule;
-import com.esafirm.imagepicker.features.camera.OnImageReadyListener;
-import com.esafirm.imagepicker.model.Image;
+import com.imagepicker.AppUtils;
+import com.imagepicker.FilePickUtils;
+import com.imagepicker.FilePickUtils.OnFileChoose;
+import com.imagepicker.LifeCycleCallBackManager;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.ActivityResultListener;
+import io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -29,7 +37,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /** Location Plugin */
-public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListener {
+public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListener, RequestPermissionsResultListener, OnFileChoose {
   private static String TAG = "ImagePicker";
   private static final String CHANNEL = "image_picker";
 
@@ -40,7 +48,7 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
   private static final int SOURCE_CAMERA = 1;
   private static final int SOURCE_GALLERY = 2;
 
-  private static final DefaultCameraModule cameraModule = new DefaultCameraModule();
+  private LifeCycleCallBackManager lifeCycleCallBackManager;
 
   private final PluginRegistry.Registrar registrar;
 
@@ -52,6 +60,7 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
     final MethodChannel channel = new MethodChannel(registrar.messenger(), CHANNEL);
     final ImagePickerPlugin instance = new ImagePickerPlugin(registrar);
     registrar.addActivityResultListener(instance);
+    registrar.addRequestPermissionsResultListener(instance);
     channel.setMethodCallHandler(instance);
   }
 
@@ -78,16 +87,37 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
     if (call.method.equals("pickImage")) {
       int imageSource = call.argument("source");
 
+      final FilePickUtils filePickUtils = new FilePickUtils(activity, this);
+      lifeCycleCallBackManager = filePickUtils.getCallBackManager();
+
+      File directory = new File(Environment.getExternalStorageDirectory(), "com.imagepicker");
+      if(!directory.exists()) {
+        directory.mkdirs();
+      }
+
       switch (imageSource) {
         case SOURCE_ASK_USER:
-          ImagePicker.create(activity).folderMode(true).single().start(REQUEST_CODE_PICK);
+          new AlertDialog.Builder(activity)
+                  .setItems(new CharSequence[]{"Gallery", "Camera"}, new OnClickListener() {
+                    @Override
+                    public void onClick(final DialogInterface dialogInterface, final int i) {
+                      if (i == 0) {
+                        filePickUtils.requestImageGallery(STORAGE_PERMISSION_IMAGE, true, true);
+                      }
+                      else {
+                        filePickUtils.requestImageCamera(CAMERA_PERMISSION, true, true);
+                      }
+                    }
+                  })
+            .setNegativeButton(android.R.string.cancel, null)
+            .create().show();
+
           break;
         case SOURCE_GALLERY:
-          ImagePicker.create(activity).single().showCamera(false).start(REQUEST_CODE_PICK);
+          filePickUtils.requestImageGallery(STORAGE_PERMISSION_IMAGE, true, true);
           break;
         case SOURCE_CAMERA:
-          activity.startActivityForResult(
-              cameraModule.getCameraIntent(activity), REQUEST_CODE_CAMERA);
+          filePickUtils.requestImageCamera(CAMERA_PERMISSION, true, true);
           break;
         default:
           throw new IllegalArgumentException("Invalid image source: " + imageSource);
@@ -98,54 +128,44 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
   }
 
   @Override
-  public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
-    if (requestCode == REQUEST_CODE_PICK) {
-      if (resultCode == Activity.RESULT_OK && data != null) {
-        ArrayList<Image> images = (ArrayList<Image>) ImagePicker.getImages(data);
-        handleResult(images.get(0));
-        return true;
-      } else if (resultCode != Activity.RESULT_CANCELED) {
-        pendingResult.error("PICK_ERROR", "Error picking image", null);
-      }
-
-      pendingResult = null;
-      methodCall = null;
-      return true;
+  public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    if (lifeCycleCallBackManager != null) {
+      lifeCycleCallBackManager.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
-    if (requestCode == REQUEST_CODE_CAMERA) {
-      if (resultCode == Activity.RESULT_OK) {
-        cameraModule.getImage(
-            registrar.context(),
-            data,
-            new OnImageReadyListener() {
-              @Override
-              public void onImageReady(List<Image> images) {
-                handleResult(images.get(0));
-              }
-            });
-        return true;
-      } else if (resultCode != Activity.RESULT_CANCELED) {
-        pendingResult.error("PICK_ERROR", "Error taking photo", null);
-      }
-
-      pendingResult = null;
-      methodCall = null;
-      return true;
-    }
-    return false;
+    return true;
   }
 
-  private void handleResult(Image image) {
+
+  @Override
+  public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
+    Log.i("IMAGE_PICKER", "RESULT " + data);
+    if (lifeCycleCallBackManager != null && resultCode == Activity.RESULT_OK) {
+      lifeCycleCallBackManager.onActivityResult(requestCode, resultCode, data);
+    }
+    else {
+      pendingResult = null;
+      methodCall = null;
+    }
+    return true;
+  }
+
+  @Override
+  public void onFileChoose(final String path, final int requestCode) {
+    Log.i("IMAGE_PICKER", "CHOSE " + path);
+    handleResult(new File(path));
+  }
+
+  private void handleResult(File file) {
     if (pendingResult != null) {
       Double maxWidth = methodCall.argument("maxWidth");
       Double maxHeight = methodCall.argument("maxHeight");
       boolean shouldScale = maxWidth != null || maxHeight != null;
 
       if (!shouldScale) {
-        pendingResult.success(image.getPath());
+        pendingResult.success(file.getPath());
       } else {
         try {
-          File imageFile = scaleImage(image, maxWidth, maxHeight);
+          File imageFile = scaleImage(file, maxWidth, maxHeight);
           pendingResult.success(imageFile.getPath());
         } catch (IOException e) {
           throw new RuntimeException(e);
@@ -159,8 +179,8 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
     }
   }
 
-  private File scaleImage(Image image, Double maxWidth, Double maxHeight) throws IOException {
-    Bitmap bmp = BitmapFactory.decodeFile(image.getPath());
+  private File scaleImage(File file, Double maxWidth, Double maxHeight) throws IOException {
+    Bitmap bmp = BitmapFactory.decodeFile(file.getPath());
     double originalWidth = bmp.getWidth() * 1.0;
     double originalHeight = bmp.getHeight() * 1.0;
 
@@ -203,7 +223,7 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     scaledBmp.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
 
-    String scaledCopyPath = image.getPath().replace(image.getName(), "scaled_" + image.getName());
+    String scaledCopyPath = file.getPath().replace(file.getName(), "scaled_" + file.getName());
     File imageFile = new File(scaledCopyPath);
 
     FileOutputStream fileOutput = new FileOutputStream(imageFile);
@@ -211,7 +231,7 @@ public class ImagePickerPlugin implements MethodCallHandler, ActivityResultListe
     fileOutput.close();
 
     if (shouldDownscale) {
-      copyExif(image.getPath(), scaledCopyPath);
+      copyExif(file.getPath(), scaledCopyPath);
     }
 
     return imageFile;
