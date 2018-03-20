@@ -1,3 +1,12 @@
+## 0.3.0
+
+* **Breaking change**. Set SDK constraints to match the Flutter beta release.
+
+## 0.2.1
+
+* Fixed some signatures to account for strong mode runtime errors.
+* Fixed spelling mistake in toString output.
+
 ## 0.2.0
 
 * **Breaking change**. Renamed `VideoPlayerController.isErroneous` to `VideoPlayerController.hasError`.
