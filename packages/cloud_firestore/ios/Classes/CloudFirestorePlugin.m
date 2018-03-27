@@ -114,6 +114,86 @@ NSDictionary *parseQuerySnapshot(FIRQuerySnapshot *snapshot) {
   };
 }
 
+const UInt8 DATE_TIME = 128;
+const UInt8 GEO_POINT = 129;
+const UInt8 DOCUMENT_REFERENCE = 130;
+
+@interface FirestoreWriter : FlutterStandardWriter
+- (void)writeValue:(id)value;
+@end
+
+@implementation FirestoreWriter : FlutterStandardWriter
+- (void)writeValue:(id)value {
+  if ([value isKindOfClass:[NSDate class]]) {
+    [self writeByte:DATE_TIME];
+    NSDate *date = value;
+    NSTimeInterval time = date.timeIntervalSince1970;
+    SInt64 ms = (SInt64)(time * 1000.0);
+    [self writeBytes:&ms length:8];
+  } else if ([value isKindOfClass:[FIRGeoPoint class]]) {
+    FIRGeoPoint *geoPoint = value;
+    Float64 latitude = geoPoint.latitude;
+    Float64 longitude = geoPoint.longitude;
+    [self writeByte:GEO_POINT];
+    [self writeAlignment:8];
+    [self writeBytes:(UInt8 *)&latitude length:8];
+    [self writeBytes:(UInt8 *)&longitude length:8];
+  } else if ([value isKindOfClass:[FIRDocumentReference class]]) {
+    FIRDocumentReference *documentReference = value;
+    NSString *documentPath = [documentReference path];
+    [self writeByte:DOCUMENT_REFERENCE];
+    [self writeUTF8:documentPath];
+  } else {
+    [super writeValue:value];
+  }
+}
+@end
+
+@interface FirestoreReader : FlutterStandardReader
+- (id)readValueOfType:(UInt8)type;
+@end
+
+@implementation FirestoreReader
+- (id)readValueOfType:(UInt8)type {
+  switch (type) {
+    case DATE_TIME: {
+      SInt64 value;
+      [self readBytes:&value length:8];
+      NSTimeInterval time = [NSNumber numberWithLong:value].doubleValue / 1000.0;
+      return [NSDate dateWithTimeIntervalSince1970:time];
+    }
+    case GEO_POINT: {
+      Float64 latitude;
+      Float64 longitude;
+      [self readAlignment:8];
+      [self readBytes:&latitude length:8];
+      [self readBytes:&longitude length:8];
+      return [[FIRGeoPoint alloc] initWithLatitude:latitude longitude:longitude];
+    }
+    case DOCUMENT_REFERENCE: {
+      NSString *documentPath = [self readUTF8];
+      return [[FIRFirestore firestore] documentWithPath:documentPath];
+    }
+    default:
+      return [super readValueOfType:type];
+  }
+}
+@end
+
+@interface FirestoreReaderWriter : FlutterStandardReaderWriter
+- (FlutterStandardWriter *)writerWithData:(NSMutableData *)data;
+- (FlutterStandardReader *)readerWithData:(NSData *)data;
+@end
+
+@implementation FirestoreReaderWriter
+- (FlutterStandardWriter *)writerWithData:(NSMutableData *)data {
+  return [[FirestoreWriter alloc] initWithData:data];
+}
+- (FlutterStandardReader *)readerWithData:(NSData *)data {
+  return [[FirestoreReader alloc] initWithData:data];
+}
+@end
+
 @interface FLTCloudFirestorePlugin ()
 @property(nonatomic, retain) FlutterMethodChannel *channel;
 @end
@@ -123,12 +203,17 @@ NSDictionary *parseQuerySnapshot(FIRQuerySnapshot *snapshot) {
   int _nextListenerHandle;
   NSMutableDictionary *transactions;
   NSMutableDictionary *transactionResults;
+  NSMutableDictionary<NSNumber *, FIRWriteBatch *> *_batches;
+  int _nextBatchHandle;
 }
 
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
+  FirestoreReaderWriter *firestoreReaderWriter = [FirestoreReaderWriter new];
   FlutterMethodChannel *channel =
       [FlutterMethodChannel methodChannelWithName:@"plugins.flutter.io/cloud_firestore"
-                                  binaryMessenger:[registrar messenger]];
+                                  binaryMessenger:[registrar messenger]
+                                            codec:[FlutterStandardMethodCodec
+                                                      codecWithReaderWriter:firestoreReaderWriter]];
   FLTCloudFirestorePlugin *instance = [[FLTCloudFirestorePlugin alloc] init];
   instance.channel = channel;
   [registrar addMethodCallDelegate:instance channel:channel];
@@ -141,7 +226,9 @@ NSDictionary *parseQuerySnapshot(FIRQuerySnapshot *snapshot) {
       [FIRApp configure];
     }
     _listeners = [NSMutableDictionary<NSNumber *, id<FIRListenerRegistration>> dictionary];
+    _batches = [NSMutableDictionary<NSNumber *, FIRWriteBatch *> dictionary];
     _nextListenerHandle = 0;
+    _nextBatchHandle = 0;
     transactions = [NSMutableDictionary<NSNumber *, FIRTransaction *> dictionary];
     transactionResults = [NSMutableDictionary<NSNumber *, id> dictionary];
   }
@@ -284,41 +371,9 @@ NSDictionary *parseQuerySnapshot(FIRQuerySnapshot *snapshot) {
     id<FIRListenerRegistration> listener = [query
         addSnapshotListener:^(FIRQuerySnapshot *_Nullable snapshot, NSError *_Nullable error) {
           if (error) result(error.flutterError);
-          NSMutableArray *paths = [NSMutableArray array];
-          NSMutableArray *documents = [NSMutableArray array];
-          for (FIRDocumentSnapshot *document in snapshot.documents) {
-            [paths addObject:document.reference.path];
-            [documents addObject:[self convertReferencesToPath:document.data.mutableCopy]];
-          }
-          NSMutableArray *documentChanges = [NSMutableArray array];
-          for (FIRDocumentChange *documentChange in snapshot.documentChanges) {
-            NSString *type;
-            switch (documentChange.type) {
-              case FIRDocumentChangeTypeAdded:
-                type = @"DocumentChangeType.added";
-                break;
-              case FIRDocumentChangeTypeModified:
-                type = @"DocumentChangeType.modified";
-                break;
-              case FIRDocumentChangeTypeRemoved:
-                type = @"DocumentChangeType.removed";
-                break;
-            }
-            [documentChanges addObject:@{
-              @"type" : type,
-              @"document" : [self convertReferencesToPath:documentChange.document.data.mutableCopy],
-              @"path" : documentChange.document.reference.path,
-              @"oldIndex" : [NSNumber numberWithInt:documentChange.oldIndex],
-              @"newIndex" : [NSNumber numberWithInt:documentChange.newIndex],
-            }];
-          }
-          [self.channel invokeMethod:@"QuerySnapshot"
-                           arguments:@{
-                             @"handle" : handle,
-                             @"paths" : paths,
-                             @"documents" : documents,
-                             @"documentChanges" : documentChanges
-                           }];
+          NSMutableDictionary *arguments = [parseQuerySnapshot(snapshot) mutableCopy];
+          [arguments setObject:handle forKey:@"handle"];
+          [self.channel invokeMethod:@"QuerySnapshot" arguments:arguments];
         }];
     _listeners[handle] = listener;
     result(handle);
@@ -332,8 +387,8 @@ NSDictionary *parseQuerySnapshot(FIRQuerySnapshot *snapshot) {
           [self.channel invokeMethod:@"DocumentSnapshot"
                            arguments:@{
                              @"handle" : handle,
-                             @"data" : snapshot.exists ? [self convertReferencesToPath:snapshot.data.mutableCopy] : [NSNull null],
                              @"path" : snapshot.reference.path,
+                             @"data" : snapshot.exists ? snapshot.data : [NSNull null],
                            }];
         }];
     _listeners[handle] = listener;
@@ -357,22 +412,46 @@ NSDictionary *parseQuerySnapshot(FIRQuerySnapshot *snapshot) {
     [[_listeners objectForKey:handle] remove];
     [_listeners removeObjectForKey:handle];
     result(nil);
-  } else if ([@"DocumentReference#delete" isEqualToString:call.method]) {
-      NSString *path = call.arguments[@"path"];
-      FIRDocumentReference *reference = [[FIRFirestore firestore] documentWithPath:path];
-      [reference deleteDocumentWithCompletion:defaultCompletionBlock];
+  } else if ([@"WriteBatch#create" isEqualToString:call.method]) {
+    __block NSNumber *handle = [NSNumber numberWithInt:_nextBatchHandle++];
+    FIRWriteBatch *batch = [[FIRFirestore firestore] batch];
+    _batches[handle] = batch;
+    result(handle);
+  } else if ([@"WriteBatch#setData" isEqualToString:call.method]) {
+    NSNumber *handle = call.arguments[@"handle"];
+    NSString *path = call.arguments[@"path"];
+    NSDictionary *options = call.arguments[@"options"];
+    FIRDocumentReference *reference = [[FIRFirestore firestore] documentWithPath:path];
+    FIRWriteBatch *batch = [_batches objectForKey:handle];
+    if (![options isEqual:[NSNull null]] &&
+        [options[@"merge"] isEqual:[NSNumber numberWithBool:YES]]) {
+      [batch setData:call.arguments[@"data"] forDocument:reference options:[FIRSetOptions merge]];
+    } else {
+      [batch setData:call.arguments[@"data"] forDocument:reference];
+    }
+    result(nil);
+  } else if ([@"WriteBatch#updateData" isEqualToString:call.method]) {
+    NSNumber *handle = call.arguments[@"handle"];
+    NSString *path = call.arguments[@"path"];
+    FIRDocumentReference *reference = [[FIRFirestore firestore] documentWithPath:path];
+    FIRWriteBatch *batch = [_batches objectForKey:handle];
+    [batch updateData:call.arguments[@"data"] forDocument:reference];
+    result(nil);
+  } else if ([@"WriteBatch#delete" isEqualToString:call.method]) {
+    NSNumber *handle = call.arguments[@"handle"];
+    NSString *path = call.arguments[@"path"];
+    FIRDocumentReference *reference = [[FIRFirestore firestore] documentWithPath:path];
+    FIRWriteBatch *batch = [_batches objectForKey:handle];
+    [batch deleteDocument:reference];
+    result(nil);
+  } else if ([@"WriteBatch#commit" isEqualToString:call.method]) {
+    NSNumber *handle = call.arguments[@"handle"];
+    FIRWriteBatch *batch = [_batches objectForKey:handle];
+    [batch commitWithCompletion:defaultCompletionBlock];
+    [_batches removeObjectForKey:handle];
   } else {
     result(FlutterMethodNotImplemented);
   }
 }
 
--(NSDictionary*)convertReferencesToPath:(NSMutableDictionary<NSString*, NSObject*>*) data {
-    NSArray<NSString*>* keys = data.allKeys;
-    for (NSString* key in keys) {
-        if ([data[key] isKindOfClass:[FIRDocumentReference class]]) {
-            data[key] = ((FIRDocumentReference*)data[key]).path;
-        }
-    }
-    return data;
-}
 @end
