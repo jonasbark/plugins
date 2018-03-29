@@ -8,7 +8,7 @@ part of cloud_firestore;
 /// document references, and querying for documents (using the methods
 /// inherited from [Query]).
 class CollectionReference extends Query {
-  CollectionReference._({@required Firestore firestore, @required List<String> pathComponents, Map<String, dynamic> parameters})
+  CollectionReference._({Firestore firestore, List<String> pathComponents, Map<String, dynamic> parameters})
       : super._(firestore: firestore, pathComponents: pathComponents, parameters: parameters);
 
   /// For subcollections, parent returns the containing DocumentReference.
@@ -19,7 +19,7 @@ class CollectionReference extends Query {
       return null;
     }
     return new CollectionReference._(
-        _firestore, (new List<String>.from(_pathComponents)..removeLast()));
+        firestore: _firestore, pathComponents: (new List<String>.from(_pathComponents)..removeLast()));
   }
 
   CollectionReference _copyWithParameters(Map<String, dynamic> parameters) {

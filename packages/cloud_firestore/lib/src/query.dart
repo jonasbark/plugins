@@ -93,7 +93,7 @@ class Query {
 
   /// Obtains a CollectionReference corresponding to this query's location.
   CollectionReference reference() =>
-      new CollectionReference._(_firestore, _pathComponents);
+      new CollectionReference._(firestore: _firestore, pathComponents: _pathComponents);
 
   /// Creates and returns a new [Query] with additional filter on specified
   /// [field].
