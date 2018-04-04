@@ -54,7 +54,7 @@ class Firestore {
   /// Gets a [CollectionReference] for the specified Firestore path.
   CollectionReference collection(String path) {
     assert(path != null);
-    return new CollectionReference._(firestore: this, pathComponents: path.split('/'));
+    return new CollectionReference._(this, path.split('/'));
   }
 
   /// Gets a [DocumentReference] for the specified Firestore path.
