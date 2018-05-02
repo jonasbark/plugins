@@ -13,7 +13,7 @@ class CameraExampleHome extends StatefulWidget {
   }
 }
 
-// Function to get a suitable icon depending on the selected lens.
+/// Returns a suitable camera icon for [direction].
 IconData getCameraLensIcon(CameraLensDirection direction) {
   switch (direction) {
     case CameraLensDirection.back:
@@ -40,7 +40,6 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
 
   @override
   Widget build(BuildContext context) {
-    // The main scaffolding of the app.
     return new Scaffold(
       key: _scaffoldKey,
       appBar: new AppBar(
@@ -91,8 +90,6 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
           fontWeight: FontWeight.w900,
         ),
       );
-    } else if (controller.value.hasError) {
-      return new Text('Camera error ${controller.value.errorDescription}');
     } else {
       return new AspectRatio(
         aspectRatio: controller.value.aspectRatio,
@@ -101,7 +98,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
     }
   }
 
-  /// Display the thumbnail of the captured image.
+  /// Display the thumbnail of the captured image or video.
   Widget _thumbnailWidget() {
     return new Expanded(
       child: new Align(
@@ -232,7 +229,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
           videoController?.dispose();
           videoController = null;
         });
-        showInSnackBar('Picture saved to $filePath');
+        if (imagePath != null) showInSnackBar('Picture saved to $imagePath');
       }
     });
   }
@@ -240,7 +237,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
   void onVideoRecordButtonPressed() {
     startVideoRecording().then((String filePath) {
       if (mounted) setState(() {});
-      showInSnackBar('Saving video to $filePath');
+      if (imagePath != null) showInSnackBar('Saving video to $filePath');
     });
   }
 
@@ -266,6 +263,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
       await controller.startVideoRecording(filePath);
     } on CameraException catch (e) {
       logError(e.code, e.description);
+      return null;
     }
     return filePath;
   }
@@ -278,7 +276,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
         logError(e.code, e.description);
       }
       final VideoPlayerController vcontroller =
-          new VideoPlayerController.network('file://$videoPath');
+          new VideoPlayerController.file(new File(videoPath));
       vcontroller.play();
       vcontroller.setLooping(true);
       videoPlayerListener = () {
@@ -314,6 +312,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome> {
       await controller.takePicture(filePath);
     } on CameraException catch (e) {
       logError(e.code, e.description);
+      return null;
     }
     return filePath;
   }
@@ -331,7 +330,7 @@ class CameraApp extends StatelessWidget {
 List<CameraDescription> cameras;
 
 Future<Null> main() async {
-  // Save the available cameras in this variable first before initializing the app.
+  // Fetch the available cameras before initializing the app.
   try {
     cameras = await availableCameras();
   } on CameraException catch (e) {

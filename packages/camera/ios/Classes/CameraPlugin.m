@@ -86,8 +86,8 @@
                              error:(NSError **)error;
 - (void)start;
 - (void)stop;
-- (void)startRecordingVideoAtPath:(NSString *)path result:(FlutterResult)result;
-- (void)stopRecordingVideoWithResult:(FlutterResult)result;
+- (void)startVideoRecordingAtPath:(NSString *)path result:(FlutterResult)result;
+- (void)stopVideoRecordingWithResult:(FlutterResult)result;
 - (void)captureToFile:(NSString *)filename result:(FlutterResult)result;
 @end
 
@@ -181,6 +181,13 @@
     });
     return;
   }
+  if (_videoWriter.status == AVAssetWriterStatusFailed) {
+    _eventSink(@{
+      @"event" : @"error",
+      @"errorDescription" : @"AVAssetWriter failed! File may already exist at given path."
+    });
+    return;
+  }
   if (_isRecording == YES) {
     CMTime lastSampleTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
     if (_videoWriter.status != AVAssetWriterStatusWriting) {
@@ -204,11 +211,14 @@
       });
     return;
   }
-  if (![_videoWriterInput appendSampleBuffer:sampleBuffer]) {
-    _eventSink(@{
-      @"event" : @"error",
-      @"errorDescription" : [NSString stringWithFormat:@"%@", @"Unable to write to video input"]
-    });
+  if (_videoWriterInput.readyForMoreMediaData) {
+    if (![_videoWriterInput appendSampleBuffer:sampleBuffer]) {
+      _eventSink(@{
+        @"event" : @"error",
+        @"errorDescription" :
+            [NSString stringWithFormat:@"%@", @"Unable to write to video input"]
+      });
+    }
   }
 }
 
@@ -221,11 +231,14 @@
       });
     return;
   }
-  if (![_audioWriterInput appendSampleBuffer:sampleBuffer]) {
-    _eventSink(@{
-      @"event" : @"error",
-      @"errorDescription" : [NSString stringWithFormat:@"%@", @"Unable to write to audio input"]
-    });
+  if (_audioWriterInput.readyForMoreMediaData) {
+    if (![_audioWriterInput appendSampleBuffer:sampleBuffer]) {
+      _eventSink(@{
+        @"event" : @"error",
+        @"errorDescription" :
+            [NSString stringWithFormat:@"%@", @"Unable to write to audio input"]
+      });
+    }
   }
 }
 
@@ -263,7 +276,7 @@
   _eventSink = events;
   return nil;
 }
-- (void)startRecordingVideoAtPath:(NSString *)path result:(FlutterResult)result {
+- (void)startVideoRecordingAtPath:(NSString *)path result:(FlutterResult)result {
   if (!_isRecording) {
     if (![self setupWriterForPath:path]) {
       _eventSink(@{@"event" : @"error", @"errorDescription" : @"Setup Writer Failed"});
@@ -272,18 +285,33 @@
     [_captureSession stopRunning];
     _isRecording = YES;
     [_captureSession startRunning];
+    result(nil);
+  } else {
+    _eventSink(@{@"event" : @"error", @"errorDescription" : @"Video is already recording!"});
   }
 }
 
-- (void)stopRecordingVideoWithResult:(FlutterResult)result {
+- (void)stopVideoRecordingWithResult:(FlutterResult)result {
   if (_isRecording) {
     _isRecording = NO;
-    __block NSString *path = _videoWriter.outputURL.absoluteString;
-    if (_videoWriter.status != 0) {
+    if (_videoWriter.status != AVAssetWriterStatusUnknown) {
       [_videoWriter finishWritingWithCompletionHandler:^{
-        result(@{@"outputURL" : path});
+        if (self->_videoWriter.status == AVAssetWriterStatusCompleted) {
+          result(nil);
+        } else {
+          self->_eventSink(@{
+            @"event" : @"error",
+            @"errorDescription" : @"AVAssetWriter could not finish writing!"
+          });
+        }
       }];
     }
+  } else {
+    NSError *error =
+        [NSError errorWithDomain:NSCocoaErrorDomain
+                            code:NSURLErrorResourceUnavailable
+                        userInfo:@{NSLocalizedDescriptionKey : @"Video is not recording!"}];
+    result([error flutterError]);
   }
 }
 
@@ -342,11 +370,14 @@
 - (void)setUpCaptureSessionForAudio {
   NSError *error = nil;
   // Create a device input with the device and add it to the session.
-  // Setup the audio input
+  // Setup the audio input.
   AVCaptureDevice *audioDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeAudio];
   AVCaptureDeviceInput *audioInput =
       [AVCaptureDeviceInput deviceInputWithDevice:audioDevice error:&error];
-  // Setup the audio output
+  if (error) {
+    _eventSink(@{@"event" : @"error", @"errorDescription" : error.description});
+  }
+  // Setup the audio output.
   _audioOutput = [[AVCaptureAudioDataOutput alloc] init];
 
   if ([_captureSession canAddInput:audioInput]) {
@@ -369,7 +400,7 @@
 @interface CameraPlugin ()
 @property(readonly, nonatomic) NSObject<FlutterTextureRegistry> *registry;
 @property(readonly, nonatomic) NSObject<FlutterBinaryMessenger> *messenger;
-@property(readonly, nonatomic) NSMutableDictionary *cams;
+@property(readonly, nonatomic) FLTCam *camera;
 @end
 
 @implementation CameraPlugin
@@ -388,17 +419,14 @@
   NSAssert(self, @"super init cannot be nil");
   _registry = registry;
   _messenger = messenger;
-  _cams = [NSMutableDictionary dictionaryWithCapacity:1];
   return self;
 }
 
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
   if ([@"init" isEqualToString:call.method]) {
-    for (NSNumber *textureId in _cams) {
-      [_registry unregisterTexture:[textureId longLongValue]];
-      [[_cams objectForKey:textureId] close];
+    if (_camera) {
+      [_camera close];
     }
-    [_cams removeAllObjects];
     result(nil);
   } else if ([@"availableCameras" isEqualToString:call.method]) {
     AVCaptureDeviceDiscoverySession *discoverySession = [AVCaptureDeviceDiscoverySession
@@ -437,8 +465,11 @@
     if (error) {
       result([error flutterError]);
     } else {
+      if (_camera) {
+        [_camera close];
+      }
       int64_t textureId = [_registry registerTexture:cam];
-      _cams[@(textureId)] = cam;
+      _camera = cam;
       cam.onFrameAvailable = ^{
         [_registry textureFrameAvailable:textureId];
       };
@@ -456,27 +487,22 @@
         @"captureWidth" : @(cam.captureSize.width),
         @"captureHeight" : @(cam.captureSize.height),
       });
-      // starting the choosen cam
       [cam start];
     }
   } else {
     NSDictionary *argsMap = call.arguments;
     NSUInteger textureId = ((NSNumber *)argsMap[@"textureId"]).unsignedIntegerValue;
-    FLTCam *cam = _cams[@(textureId)];
 
     if ([@"takePicture" isEqualToString:call.method]) {
-      [cam captureToFile:call.arguments[@"path"] result:result];
+      [_camera captureToFile:call.arguments[@"path"] result:result];
     } else if ([@"dispose" isEqualToString:call.method]) {
       [_registry unregisterTexture:textureId];
-      [cam close];
-      [_cams removeObjectForKey:@(textureId)];
+      [_camera close];
       result(nil);
     } else if ([@"startVideoRecording" isEqualToString:call.method]) {
-      [cam startRecordingVideoAtPath:call.arguments[@"filePath"] result:result];
-
+      [_camera startVideoRecordingAtPath:call.arguments[@"filePath"] result:result];
     } else if ([@"stopVideoRecording" isEqualToString:call.method]) {
-      [cam stopRecordingVideoWithResult:result];
-      result(nil);
+      [_camera stopVideoRecordingWithResult:result];
     } else {
       result(FlutterMethodNotImplemented);
     }
