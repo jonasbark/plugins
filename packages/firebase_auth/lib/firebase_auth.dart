@@ -78,9 +78,8 @@ class FirebaseUser extends UserInfo {
     });
   }
 
-
-  Future<String> sendEmailVerification() {
-    return FirebaseAuth.channel.invokeMethod('sendEmailVerification', <String, bool>{});
+  Future<void> sendEmailVerification() async {
+    await FirebaseAuth.channel.invokeMethod('sendEmailVerification');
   }
 
   @override
@@ -307,6 +306,20 @@ class FirebaseAuth {
       'linkWithGoogleCredential',
       <String, String>{
         'idToken': idToken,
+        'accessToken': accessToken,
+      },
+    );
+    final FirebaseUser currentUser = new FirebaseUser._(data);
+    return currentUser;
+  }
+
+  Future<FirebaseUser> linkWithFacebookCredential({
+    @required String accessToken,
+  }) async {
+    assert(accessToken != null);
+    final Map<dynamic, dynamic> data = await channel.invokeMethod(
+      'linkWithFacebookCredential',
+      <String, String>{
         'accessToken': accessToken,
       },
     );
