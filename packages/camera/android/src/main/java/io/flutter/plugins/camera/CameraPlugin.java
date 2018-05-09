@@ -16,6 +16,7 @@ import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.CamcorderProfile;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
@@ -379,7 +380,7 @@ public class CameraPlugin implements MethodCallHandler {
         // Video capture size should not be greater than 1080 because MediaRecorder cannot handle higher resolutions.
         videoSize = goodEnough.get(0);
         for (int i = goodEnough.size() - 1; i >= 0; i--) {
-          if (goodEnough.get(i).getHeight() <= 1080) {
+          if (goodEnough.get(i).getHeight() <= 700) {
             videoSize = goodEnough.get(i);
             break;
           }
@@ -402,13 +403,14 @@ public class CameraPlugin implements MethodCallHandler {
       mediaRecorder = new MediaRecorder();
       mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
       mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
-      mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+      /*mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
       mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
       mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
       mediaRecorder.setVideoEncodingBitRate(2500000);
       mediaRecorder.setAudioSamplingRate(16000);
-      mediaRecorder.setVideoFrameRate(27);
-      mediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
+      mediaRecorder.setVideoFrameRate(27);*/
+      mediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_480P));
+//      mediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
       mediaRecorder.setOutputFile(outputFilePath);
 
       int displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
