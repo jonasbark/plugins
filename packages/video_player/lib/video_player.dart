@@ -323,7 +323,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     }
   }
 
-  Future<Int> getOrientation() async {
+  Future<int> getOrientation() async {
      if (!value.initialized || isDisposed) {
       return;
     }
