@@ -314,6 +314,9 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         videoPlayers.remove(textureId);
         result.success(null);
         break;
+      case "orientation":
+        result.success(0);
+        break;
       default:
         result.notImplemented();
         break;
