@@ -110,6 +110,20 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         final SimpleExoPlayer mediaPlayer,
         Result result) {
 
+      eventChannel.setStreamHandler(
+              new EventChannel.StreamHandler() {
+                @Override
+                public void onListen(Object o, EventChannel.EventSink sink) {
+                  eventSink = sink;
+                  sendInitialized();
+                }
+
+                @Override
+                public void onCancel(Object o) {
+                  eventSink = null;
+                }
+              });
+
 
       surface = new Surface(textureEntry.surfaceTexture());
       exoPlayer.setVideoSurface(surface);
@@ -133,12 +147,15 @@ public class VideoPlayerPlugin implements MethodCallHandler {
             isInitialized = true;
             sendInitialized();
           }
+          else {
+            setVolume(0.0);
+          }
         }
 
         @Override
         public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
 
-          if (playbackState == 1336) {
+          if (playbackState == Player.STATE_READY) {
             Map<String, Object> event = new HashMap<>();
             event.put("event", "completed");
             eventSink.success(event);
@@ -233,18 +250,6 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       Map<String, Object> reply = new HashMap<>();
       reply.put("textureId", textureEntry.id());
       result.success(reply);
-    }
-
-    @SuppressWarnings("deprecation")
-    private static void setAudioAttributes(MediaPlayer mediaPlayer) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        mediaPlayer.setAudioAttributes(
-            new AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-                .build());
-      } else {
-        mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
-      }
     }
 
     void play() {
