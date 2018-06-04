@@ -4,12 +4,33 @@
 
 package io.flutter.plugins.videoplayer;
 
+import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
+
+import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Build;
 import android.view.Surface;
+import com.google.android.exoplayer2.ExoPlaybackException;
+import com.google.android.exoplayer2.ExoPlayerFactory;
+import com.google.android.exoplayer2.PlaybackParameters;
+import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.Player.EventListener;
+import com.google.android.exoplayer2.Player.RepeatMode;
+import com.google.android.exoplayer2.SimpleExoPlayer;
+import com.google.android.exoplayer2.Timeline;
+import com.google.android.exoplayer2.source.ExtractorMediaSource;
+import com.google.android.exoplayer2.source.MediaSource;
+import com.google.android.exoplayer2.source.TrackGroupArray;
+import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
+import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
+import com.google.android.exoplayer2.trackselection.TrackSelector;
+import com.google.android.exoplayer2.upstream.DataSource;
+import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
+import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
@@ -18,16 +39,17 @@ import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.TextureRegistry;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class VideoPlayerPlugin implements MethodCallHandler {
   private static class VideoPlayer {
+
+    private SimpleExoPlayer exoPlayer;
+
+    private Surface surface;
+
     private final TextureRegistry.SurfaceTextureEntry textureEntry;
-    private final MediaPlayer mediaPlayer;
     private EventChannel.EventSink eventSink;
     private final EventChannel eventChannel;
     private boolean isInitialized = false;
@@ -38,53 +60,126 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         AssetFileDescriptor afd,
         final Result result) {
       this.eventChannel = eventChannel;
-      this.mediaPlayer = new MediaPlayer();
       this.textureEntry = textureEntry;
-      try {
+      /*try {
         mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
         setupVideoPlayer(eventChannel, textureEntry, mediaPlayer, result);
       } catch (IOException e) {
         result.error("VideoError", "IOError when initializing video player " + e.toString(), null);
-      }
+      }*/
     }
 
     VideoPlayer(
+        Context context,
         EventChannel eventChannel,
         TextureRegistry.SurfaceTextureEntry textureEntry,
         String dataSource,
         Result result) {
       this.eventChannel = eventChannel;
-      this.mediaPlayer = new MediaPlayer();
       this.textureEntry = textureEntry;
-      try {
-        mediaPlayer.setDataSource(dataSource);
+      /*try {
         setupVideoPlayer(eventChannel, textureEntry, mediaPlayer, result);
       } catch (IOException e) {
         result.error("VideoError", "IOError when initializing video player " + e.toString(), null);
-      }
+      }*/
+
+
+      Uri uri = Uri.parse(dataSource);
+      DataSource.Factory dataSourceFactory = new DefaultHttpDataSourceFactory(
+              "ExoPlayer", null,
+              DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS,
+              DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS,
+              true);
+      // This is the MediaSource representing the media to be played.
+      MediaSource mediaSource = new ExtractorMediaSource.Factory(dataSourceFactory)
+              .createMediaSource(uri);
+
+      TrackSelector trackSelector = new DefaultTrackSelector();
+
+      exoPlayer = ExoPlayerFactory.newSimpleInstance(context, trackSelector);
+
+      exoPlayer.prepare(mediaSource);
+      exoPlayer.setPlayWhenReady(true);
+
+      setupVideoPlayer(eventChannel, textureEntry, exoPlayer, result);
     }
 
     private void setupVideoPlayer(
         EventChannel eventChannel,
         TextureRegistry.SurfaceTextureEntry textureEntry,
-        final MediaPlayer mediaPlayer,
+        final SimpleExoPlayer mediaPlayer,
         Result result) {
 
-      eventChannel.setStreamHandler(
-          new EventChannel.StreamHandler() {
-            @Override
-            public void onListen(Object o, EventChannel.EventSink sink) {
-              eventSink = sink;
-              sendInitialized();
-            }
 
-            @Override
-            public void onCancel(Object o) {
-              eventSink = null;
-            }
-          });
+      surface = new Surface(textureEntry.surfaceTexture());
+      exoPlayer.setVideoSurface(surface);
 
-      mediaPlayer.setSurface(new Surface(textureEntry.surfaceTexture()));
+      exoPlayer.addListener(new EventListener() {
+        @Override
+        public void onTimelineChanged(final Timeline timeline, final Object manifest, final int reason) {
+
+        }
+
+        @Override
+        public void onTracksChanged(final TrackGroupArray trackGroups, final TrackSelectionArray trackSelections) {
+
+        }
+
+        @Override
+        public void onLoadingChanged(final boolean isLoading) {
+
+          if (!isLoading) {
+
+            isInitialized = true;
+            sendInitialized();
+          }
+        }
+
+        @Override
+        public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
+
+          if (playbackState == 1336) {
+            Map<String, Object> event = new HashMap<>();
+            event.put("event", "completed");
+            eventSink.success(event);
+          }
+        }
+
+        @Override
+        public void onRepeatModeChanged(final int repeatMode) {
+
+        }
+
+        @Override
+        public void onShuffleModeEnabledChanged(final boolean shuffleModeEnabled) {
+
+        }
+
+        @Override
+        public void onPlayerError(final ExoPlaybackException error) {
+          if (eventSink != null) {
+            eventSink.error(
+                    "VideoError", "Video player had error " + error, null);
+          }
+        }
+
+        @Override
+        public void onPositionDiscontinuity(final int reason) {
+
+        }
+
+        @Override
+        public void onPlaybackParametersChanged(final PlaybackParameters playbackParameters) {
+
+        }
+
+        @Override
+        public void onSeekProcessed() {
+
+        }
+      });
+
+      /*mediaPlayer.setSurface(new Surface(textureEntry.surfaceTexture()));
       setAudioAttributes(mediaPlayer);
       mediaPlayer.setOnPreparedListener(
           new MediaPlayer.OnPreparedListener() {
@@ -132,7 +227,8 @@ public class VideoPlayerPlugin implements MethodCallHandler {
             }
           });
 
-      mediaPlayer.prepareAsync();
+      mediaPlayer.prepareAsync();*/
+
 
       Map<String, Object> reply = new HashMap<>();
       reply.put("textureId", textureEntry.id());
@@ -152,53 +248,64 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     }
 
     void play() {
-      if (!mediaPlayer.isPlaying()) {
-        mediaPlayer.start();
+      if (exoPlayer.getPlaybackState() != Player.STATE_READY) {
+//        mediaPlayer.start();
+        exoPlayer.setPlayWhenReady(true);
       }
     }
 
     void pause() {
-      if (mediaPlayer.isPlaying()) {
-        mediaPlayer.pause();
+      if (exoPlayer.getPlaybackState() != Player.STATE_READY) {
+//        exoPlayer.pause();
       }
     }
 
     void setLooping(boolean value) {
-      mediaPlayer.setLooping(value);
+//      mediaPlayer.setLooping(value);
+      exoPlayer.setRepeatMode(REPEAT_MODE_ALL);
     }
 
     void setVolume(double value) {
       float bracketedValue = (float) Math.max(0.0, Math.min(1.0, value));
-      mediaPlayer.setVolume(bracketedValue, bracketedValue);
+//      mediaPlayer.setVolume(bracketedValue, bracketedValue);
+      exoPlayer.setVolume(bracketedValue);
     }
 
     void seekTo(int location) {
-      mediaPlayer.seekTo(location);
+//      mediaPlayer.seekTo(location);
+      exoPlayer.seekTo(location);
     }
 
-    int getPosition() {
-      return mediaPlayer.getCurrentPosition();
+    long getPosition() {
+//      return mediaPlayer.getCurrentPosition();
+      return exoPlayer.getCurrentPosition();
     }
 
     private void sendInitialized() {
       if (isInitialized && eventSink != null) {
         Map<String, Object> event = new HashMap<>();
         event.put("event", "initialized");
-        event.put("duration", mediaPlayer.getDuration());
-        event.put("width", mediaPlayer.getVideoWidth());
-        event.put("height", mediaPlayer.getVideoHeight());
+        event.put("duration", exoPlayer.getDuration());
+        event.put("width", exoPlayer.getVideoFormat().width);
+        event.put("height", exoPlayer.getVideoFormat().height);
         eventSink.success(event);
       }
     }
 
     void dispose() {
-      if (isInitialized && mediaPlayer.isPlaying()) {
-        mediaPlayer.stop();
+      if (isInitialized/* && mediaPlayer.isPlaying()*/) {
+        exoPlayer.stop();
       }
-      mediaPlayer.reset();
-      mediaPlayer.release();
+//      mediaPlayer.reset();
+//      mediaPlayer.release();
       textureEntry.release();
       eventChannel.setStreamHandler(null);
+      if (surface != null) {
+        surface.release();
+      }
+      if (exoPlayer != null) {
+        exoPlayer.release();
+      }
     }
   }
 
@@ -261,7 +368,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
                   null);
             }
           } else {
-            player = new VideoPlayer(eventChannel, handle, (String) call.argument("uri"), result);
+            player = new VideoPlayer(registrar.context(), eventChannel, handle, (String) call.argument("uri"), result);
             videoPlayers.put(handle.id(), player);
           }
           break;

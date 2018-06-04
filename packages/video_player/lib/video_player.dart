@@ -325,10 +325,10 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
 
   Future<int> getOrientation() async {
      if (!value.initialized || isDisposed) {
-      return;
+      return 0;
     }
-    await _channel.invokeMethod(
-      'orienation',
+    return await _channel.invokeMethod(
+      'orientation',
       null,
     );
   }
