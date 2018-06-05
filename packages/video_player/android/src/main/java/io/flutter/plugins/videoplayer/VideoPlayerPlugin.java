@@ -5,6 +5,7 @@
 package io.flutter.plugins.videoplayer;
 
 import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
+import static com.google.android.exoplayer2.Player.REPEAT_MODE_OFF;
 
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
@@ -13,6 +14,7 @@ import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Log;
 import android.view.Surface;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.ExoPlayerFactory;
@@ -28,9 +30,14 @@ import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.trackselection.TrackSelector;
+import com.google.android.exoplayer2.upstream.AssetDataSource;
+import com.google.android.exoplayer2.upstream.ContentDataSource;
 import com.google.android.exoplayer2.upstream.DataSource;
+import com.google.android.exoplayer2.upstream.DefaultDataSource;
+import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory;
+import com.google.android.exoplayer2.upstream.RawResourceDataSource;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
@@ -55,59 +62,38 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     private boolean isInitialized = false;
 
     VideoPlayer(
-        EventChannel eventChannel,
-        TextureRegistry.SurfaceTextureEntry textureEntry,
-        AssetFileDescriptor afd,
-        final Result result) {
-      this.eventChannel = eventChannel;
-      this.textureEntry = textureEntry;
-      /*try {
-        mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
-        setupVideoPlayer(eventChannel, textureEntry, mediaPlayer, result);
-      } catch (IOException e) {
-        result.error("VideoError", "IOError when initializing video player " + e.toString(), null);
-      }*/
-    }
-
-    VideoPlayer(
         Context context,
         EventChannel eventChannel,
         TextureRegistry.SurfaceTextureEntry textureEntry,
         String dataSource,
+        boolean isAsset,
         Result result) {
       this.eventChannel = eventChannel;
       this.textureEntry = textureEntry;
-      /*try {
-        setupVideoPlayer(eventChannel, textureEntry, mediaPlayer, result);
-      } catch (IOException e) {
-        result.error("VideoError", "IOError when initializing video player " + e.toString(), null);
-      }*/
 
-
-      Uri uri = Uri.parse(dataSource);
-      DataSource.Factory dataSourceFactory = new DefaultHttpDataSourceFactory(
-              "ExoPlayer", null,
-              DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS,
-              DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS,
-              true);
-      // This is the MediaSource representing the media to be played.
-      MediaSource mediaSource = new ExtractorMediaSource.Factory(dataSourceFactory)
-              .createMediaSource(uri);
 
       TrackSelector trackSelector = new DefaultTrackSelector();
-
       exoPlayer = ExoPlayerFactory.newSimpleInstance(context, trackSelector);
 
-      exoPlayer.prepare(mediaSource);
-      exoPlayer.setPlayWhenReady(true);
+      Uri uri = Uri.parse(dataSource);
 
-      setupVideoPlayer(eventChannel, textureEntry, exoPlayer, result);
+      DataSource.Factory dataSourceFactory;
+      if (isAsset) {
+        dataSourceFactory = new DefaultDataSourceFactory(context, "ExoPlayer");
+      }
+      else {
+        dataSourceFactory = new DefaultHttpDataSourceFactory("ExoPlayer", null, DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS, DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS, true);
+      }
+
+      MediaSource mediaSource = new ExtractorMediaSource.Factory(dataSourceFactory).createMediaSource(uri);
+      exoPlayer.prepare(mediaSource);
+
+      setupVideoPlayer(eventChannel, textureEntry, result);
     }
 
     private void setupVideoPlayer(
         EventChannel eventChannel,
         TextureRegistry.SurfaceTextureEntry textureEntry,
-        final SimpleExoPlayer mediaPlayer,
         Result result) {
 
       eventChannel.setStreamHandler(
@@ -127,6 +113,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
       surface = new Surface(textureEntry.surfaceTexture());
       exoPlayer.setVideoSurface(surface);
+      exoPlayer.setPlayWhenReady(true);
 
       exoPlayer.addListener(new EventListener() {
         @Override
@@ -154,12 +141,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
         @Override
         public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
-
-          if (playbackState == Player.STATE_READY) {
-            Map<String, Object> event = new HashMap<>();
-            event.put("event", "completed");
-            eventSink.success(event);
-          }
+          
         }
 
         @Override
@@ -196,9 +178,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         }
       });
 
-      /*mediaPlayer.setSurface(new Surface(textureEntry.surfaceTexture()));
-      setAudioAttributes(mediaPlayer);
-      mediaPlayer.setOnPreparedListener(
+      /*mediaPlayer.setOnPreparedListener(
           new MediaPlayer.OnPreparedListener() {
             @Override
             public void onPrepared(MediaPlayer mp) {
@@ -220,31 +200,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
               isInitialized = true;
               sendInitialized();
             }
-          });
-
-      mediaPlayer.setOnErrorListener(
-          new MediaPlayer.OnErrorListener() {
-            @Override
-            public boolean onError(MediaPlayer mp, int what, int extra) {
-              if (eventSink != null) {
-                eventSink.error(
-                    "VideoError", "Video player had error " + what + " extra " + extra, null);
-              }
-              return true;
-            }
-          });
-
-      mediaPlayer.setOnCompletionListener(
-          new MediaPlayer.OnCompletionListener() {
-            @Override
-            public void onCompletion(MediaPlayer mediaPlayer) {
-              Map<String, Object> event = new HashMap<>();
-              event.put("event", "completed");
-              eventSink.success(event);
-            }
-          });
-
-      mediaPlayer.prepareAsync();*/
+          });*/
 
 
       Map<String, Object> reply = new HashMap<>();
@@ -253,36 +209,27 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     }
 
     void play() {
-      if (exoPlayer.getPlaybackState() != Player.STATE_READY) {
-//        mediaPlayer.start();
-        exoPlayer.setPlayWhenReady(true);
-      }
+      exoPlayer.setPlayWhenReady(true);
     }
 
     void pause() {
-      if (exoPlayer.getPlaybackState() != Player.STATE_READY) {
-//        exoPlayer.pause();
-      }
+      exoPlayer.setPlayWhenReady(false);
     }
 
     void setLooping(boolean value) {
-//      mediaPlayer.setLooping(value);
-      exoPlayer.setRepeatMode(REPEAT_MODE_ALL);
+      exoPlayer.setRepeatMode(value ? REPEAT_MODE_ALL : REPEAT_MODE_OFF);
     }
 
     void setVolume(double value) {
       float bracketedValue = (float) Math.max(0.0, Math.min(1.0, value));
-//      mediaPlayer.setVolume(bracketedValue, bracketedValue);
       exoPlayer.setVolume(bracketedValue);
     }
 
     void seekTo(int location) {
-//      mediaPlayer.seekTo(location);
       exoPlayer.seekTo(location);
     }
 
     long getPosition() {
-//      return mediaPlayer.getCurrentPosition();
       return exoPlayer.getCurrentPosition();
     }
 
@@ -291,18 +238,18 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         Map<String, Object> event = new HashMap<>();
         event.put("event", "initialized");
         event.put("duration", exoPlayer.getDuration());
-        event.put("width", exoPlayer.getVideoFormat().width);
-        event.put("height", exoPlayer.getVideoFormat().height);
+        if (exoPlayer.getVideoFormat() != null) {
+          event.put("width", exoPlayer.getVideoFormat().width);
+          event.put("height", exoPlayer.getVideoFormat().height);
+        }
         eventSink.success(event);
       }
     }
 
     void dispose() {
-      if (isInitialized/* && mediaPlayer.isPlaying()*/) {
+      if (isInitialized) {
         exoPlayer.stop();
       }
-//      mediaPlayer.reset();
-//      mediaPlayer.release();
       textureEntry.release();
       eventChannel.setStreamHandler(null);
       if (surface != null) {
@@ -351,29 +298,18 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
           VideoPlayer player;
           if (call.argument("asset") != null) {
-            try {
-              String assetLookupKey;
-              if (call.argument("package") != null) {
-                assetLookupKey =
-                    registrar.lookupKeyForAsset(
-                        (String) call.argument("asset"), (String) call.argument("package"));
-              } else {
-                assetLookupKey = registrar.lookupKeyForAsset((String) call.argument("asset"));
-              }
-              AssetFileDescriptor fd = registrar.context().getAssets().openFd(assetLookupKey);
-              player = new VideoPlayer(eventChannel, handle, fd, result);
-              videoPlayers.put(handle.id(), player);
-            } catch (IOException e) {
-              result.error(
-                  "IOError",
-                  "Error trying to access asset "
-                      + (String) call.argument("asset")
-                      + ". "
-                      + e.toString(),
-                  null);
+            String assetLookupKey;
+            if (call.argument("package") != null) {
+              assetLookupKey =
+                  registrar.lookupKeyForAsset(
+                      (String) call.argument("asset"), (String) call.argument("package"));
+            } else {
+              assetLookupKey = registrar.lookupKeyForAsset((String) call.argument("asset"));
             }
+            player = new VideoPlayer(registrar.context(), eventChannel, handle, "asset://" + assetLookupKey, true, result);
+            videoPlayers.put(handle.id(), player);
           } else {
-            player = new VideoPlayer(registrar.context(), eventChannel, handle, (String) call.argument("uri"), result);
+            player = new VideoPlayer(registrar.context(), eventChannel, handle, (String) call.argument("uri"), false, result);
             videoPlayers.put(handle.id(), player);
           }
           break;
