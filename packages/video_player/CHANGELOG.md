@@ -1,3 +1,6 @@
+## 0.5.2
+* Android: use ExoPlayer instead of MediaPlayer for better video compatibility
+
 ## 0.5.1
 
 * Fixed bug on video loop feature for ios.

@@ -17,6 +17,7 @@ import android.os.Build;
 import android.util.Log;
 import android.view.Surface;
 import com.google.android.exoplayer2.ExoPlaybackException;
+import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.ExoPlayerFactory;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
@@ -46,7 +47,10 @@ import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.TextureRegistry;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class VideoPlayerPlugin implements MethodCallHandler {
@@ -101,7 +105,6 @@ public class VideoPlayerPlugin implements MethodCallHandler {
                 @Override
                 public void onListen(Object o, EventChannel.EventSink sink) {
                   eventSink = sink;
-                  sendInitialized();
                 }
 
                 @Override
@@ -141,7 +144,16 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
         @Override
         public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
-          
+          if (playbackState == Player.STATE_BUFFERING) {
+            if (eventSink != null) {
+              Map<String, Object> event = new HashMap<>();
+              event.put("event", "bufferingUpdate");
+              List<Integer> range = Arrays.asList(0, exoPlayer.getBufferedPercentage());
+              // iOS supports a list of buffered ranges, so here is a list with a single range.
+              event.put("values", Collections.singletonList(range));
+              eventSink.success(event);
+            }
+          }
         }
 
         @Override
@@ -177,31 +189,6 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
         }
       });
-
-      /*mediaPlayer.setOnPreparedListener(
-          new MediaPlayer.OnPreparedListener() {
-            @Override
-            public void onPrepared(MediaPlayer mp) {
-              mediaPlayer.setOnBufferingUpdateListener(
-                  new MediaPlayer.OnBufferingUpdateListener() {
-                    @Override
-                    public void onBufferingUpdate(MediaPlayer mediaPlayer, int percent) {
-                      if (eventSink != null) {
-                        Map<String, Object> event = new HashMap<>();
-                        event.put("event", "bufferingUpdate");
-                        List<Integer> range =
-                            Arrays.asList(0, percent * mediaPlayer.getDuration() / 100);
-                        // iOS supports a list of buffered ranges, so here is a list with a single range.
-                        event.put("values", Collections.singletonList(range));
-                        eventSink.success(event);
-                      }
-                    }
-                  });
-              isInitialized = true;
-              sendInitialized();
-            }
-          });*/
-
 
       Map<String, Object> reply = new HashMap<>();
       reply.put("textureId", textureEntry.id());
@@ -306,7 +293,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
             } else {
               assetLookupKey = registrar.lookupKeyForAsset((String) call.argument("asset"));
             }
-            player = new VideoPlayer(registrar.context(), eventChannel, handle, "asset://" + assetLookupKey, true, result);
+            player = new VideoPlayer(registrar.context(), eventChannel, handle, "asset:///" + assetLookupKey, true, result);
             videoPlayers.put(handle.id(), player);
           } else {
             player = new VideoPlayer(registrar.context(), eventChannel, handle, (String) call.argument("uri"), false, result);
