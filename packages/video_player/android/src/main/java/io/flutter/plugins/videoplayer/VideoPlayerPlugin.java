@@ -70,7 +70,6 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         EventChannel eventChannel,
         TextureRegistry.SurfaceTextureEntry textureEntry,
         String dataSource,
-        boolean isAsset,
         Result result) {
       this.eventChannel = eventChannel;
       this.textureEntry = textureEntry;
@@ -82,7 +81,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       Uri uri = Uri.parse(dataSource);
 
       DataSource.Factory dataSourceFactory;
-      if (isAsset) {
+      if (uri.getScheme().equals("asset") || uri.getScheme().equals("file")) {
         dataSourceFactory = new DefaultDataSourceFactory(context, "ExoPlayer");
       }
       else {
@@ -293,10 +292,10 @@ public class VideoPlayerPlugin implements MethodCallHandler {
             } else {
               assetLookupKey = registrar.lookupKeyForAsset((String) call.argument("asset"));
             }
-            player = new VideoPlayer(registrar.context(), eventChannel, handle, "asset:///" + assetLookupKey, true, result);
+            player = new VideoPlayer(registrar.context(), eventChannel, handle, "asset:///" + assetLookupKey, result);
             videoPlayers.put(handle.id(), player);
           } else {
-            player = new VideoPlayer(registrar.context(), eventChannel, handle, (String) call.argument("uri"), false, result);
+            player = new VideoPlayer(registrar.context(), eventChannel, handle, (String) call.argument("uri"), result);
             videoPlayers.put(handle.id(), player);
           }
           break;
