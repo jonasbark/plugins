@@ -5,6 +5,9 @@ import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Bitmap.CompressFormat;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
@@ -38,6 +41,7 @@ import io.flutter.view.FlutterView;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -395,7 +399,7 @@ public class CameraPlugin implements MethodCallHandler {
               new CompareSizesByArea());
       Collections.reverse(sizes);
       for (Size size : sizes) {
-        if (size.getHeight() < 800 && size.getWidth() < 700) {
+        if (size.getHeight() < 860) {
           captureSize = size;
           return;
         }
@@ -516,7 +520,7 @@ public class CameraPlugin implements MethodCallHandler {
       }
     }
 
-    private void takePicture(String filePath, @NonNull final Result result) {
+    private void takePicture(final String filePath, @NonNull final Result result) {
       final File file = new File(filePath);
 
       if (file.exists()) {
