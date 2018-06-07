@@ -9,6 +9,7 @@ import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -419,7 +420,7 @@ public class CameraPlugin implements MethodCallHandler {
       mediaRecorder.setVideoEncodingBitRate(2500000);
       mediaRecorder.setAudioSamplingRate(16000);
       mediaRecorder.setVideoFrameRate(27);*/
-      mediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_480P));
+      mediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_720P));
 //      mediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
       mediaRecorder.setOutputFile(outputFilePath);
 
@@ -535,12 +536,14 @@ public class CameraPlugin implements MethodCallHandler {
               new ImageReader.OnImageAvailableListener() {
                 @Override
                 public void onImageAvailable(ImageReader reader) {
+
                   try (Image image = reader.acquireLatestImage()) {
                     ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                     writeToFile(buffer, file);
                     result.success(null);
                   } catch (IOException e) {
                     result.error("IOError", "Failed saving image", null);
+
                   }
                 }
               },
@@ -550,6 +553,7 @@ public class CameraPlugin implements MethodCallHandler {
         final CaptureRequest.Builder captureBuilder =
                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
         captureBuilder.addTarget(imageReader.getSurface());
+//        captureBuilder.set(CaptureRequest.SCALER_CROP_REGION, new Rect(28, 16, 400, 400));
         int displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
         int displayOrientation = ORIENTATIONS.get(displayRotation);
         if (isFrontFacing) displayOrientation = -displayOrientation;
