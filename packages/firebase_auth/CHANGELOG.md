@@ -1,3 +1,11 @@
+## 0.5.11
+
+* Updated Gradle tooling to match Android Studio 3.1.2.
+
+## 0.5.10
+
+* Updated iOS implementation to reflect Firebase API changes.
+
 ## 0.5.9
 
 * Added support for signing in with a Twitter account.

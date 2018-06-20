@@ -1,3 +1,11 @@
+## 1.0.1
+
+* Updated Gradle tooling to match Android Studio 3.1.2.
+
+## 1.0.0
+
+* Bump to released version
+
 ## 0.4.6
 
 * Allow null value for `startAt`, `endAt` and `equalTo` queries on Android.
