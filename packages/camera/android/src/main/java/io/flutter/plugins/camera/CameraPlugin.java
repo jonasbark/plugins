@@ -15,6 +15,7 @@ import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
+import android.media.CamcorderProfile;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
@@ -379,7 +380,7 @@ public class CameraPlugin implements MethodCallHandler {
         // Video capture size should not be greater than 1080 because MediaRecorder cannot handle higher resolutions.
         videoSize = goodEnough.get(0);
         for (int i = goodEnough.size() - 1; i >= 0; i--) {
-          if (goodEnough.get(i).getHeight() <= 1080) {
+          if (goodEnough.get(i).getHeight() <= 700) {
             videoSize = goodEnough.get(i);
             break;
           }
@@ -389,10 +390,21 @@ public class CameraPlugin implements MethodCallHandler {
 
     private void computeBestCaptureSize(StreamConfigurationMap streamConfigurationMap) {
       // For still image captures, we use the largest available size.
-      captureSize =
+      /*captureSize =
           Collections.max(
               Arrays.asList(streamConfigurationMap.getOutputSizes(ImageFormat.JPEG)),
-              new CompareSizesByArea());
+              new CompareSizesByArea());*/
+      final List<Size> sizes = Arrays.asList(streamConfigurationMap.getOutputSizes(ImageFormat.JPEG));
+      Collections.sort(sizes, new CompareSizesByArea());
+      Collections.reverse(sizes);
+      for (Size size : sizes) {
+        if (size.getHeight() < 860) {
+          captureSize = size;
+          return;
+        }
+      }
+
+
     }
 
     private void prepareMediaRecorder(String outputFilePath) throws IOException {
