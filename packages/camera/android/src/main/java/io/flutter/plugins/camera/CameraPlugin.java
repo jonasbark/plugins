@@ -400,7 +400,7 @@ public class CameraPlugin implements MethodCallHandler {
         }
       }
       if (captureSize == null) {
-        capture = sizes.get(0);
+        captureSize = sizes.get(0);
       }
     }
 
