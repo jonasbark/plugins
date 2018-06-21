@@ -390,21 +390,18 @@ public class CameraPlugin implements MethodCallHandler {
 
     private void computeBestCaptureSize(StreamConfigurationMap streamConfigurationMap) {
       // For still image captures, we use the largest available size.
-      /*captureSize =
-          Collections.max(
-              Arrays.asList(streamConfigurationMap.getOutputSizes(ImageFormat.JPEG)),
-              new CompareSizesByArea());*/
       final List<Size> sizes = Arrays.asList(streamConfigurationMap.getOutputSizes(ImageFormat.JPEG));
       Collections.sort(sizes, new CompareSizesByArea());
-      Collections.reverse(sizes);
-      for (Size size : sizes) {
-        if (size.getHeight() < 860) {
+      for(Size size : sizes){
+        int area = size.getHeight()*size.getWidth();
+        if(area > 307200 && area <= 1555200 &&(float)size.getHeight()/size.getWidth() == 0.75){
           captureSize = size;
           return;
         }
       }
-
-
+      if (captureSize == null) {
+        capture = sizes.get(0);
+      }
     }
 
     private void prepareMediaRecorder(String outputFilePath) throws IOException {
