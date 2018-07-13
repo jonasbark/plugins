@@ -100,7 +100,7 @@
   _captureSession = [[AVCaptureSession alloc] init];
   AVCaptureSessionPreset preset;
   if ([resolutionPreset isEqualToString:@"high"]) {
-    preset = AVCaptureSessionPresetHigh;
+    preset = AVCaptureSessionPreset1280x720;
   } else if ([resolutionPreset isEqualToString:@"medium"]) {
     preset = AVCaptureSessionPresetMedium;
   } else {
