@@ -411,7 +411,7 @@ public class CameraPlugin implements MethodCallHandler {
       mediaRecorder = new MediaRecorder();
       mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
       mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
-      mediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_720P));
+      mediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_480P));
       mediaRecorder.setOutputFile(outputFilePath);
 
       int displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
