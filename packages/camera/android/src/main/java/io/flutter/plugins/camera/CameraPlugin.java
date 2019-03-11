@@ -416,7 +416,7 @@ public class CameraPlugin implements MethodCallHandler {
         if (minHeight <= s.getHeight()
             && s.getWidth() <= screenWidth
             && s.getHeight() <= screenHeight
-            && s.getHeight() <= 1080) {
+            && s.getHeight() <= 700) {
           goodEnough.add(s);
         }
       }
@@ -428,7 +428,6 @@ public class CameraPlugin implements MethodCallHandler {
         videoSize = sizes[0];
       } else {
         float captureSizeRatio = (float) captureSize.getWidth() / captureSize.getHeight();
-
         previewSize = goodEnough.get(0);
         for (Size s : goodEnough) {
           if ((float) s.getWidth() / s.getHeight() == captureSizeRatio) {
