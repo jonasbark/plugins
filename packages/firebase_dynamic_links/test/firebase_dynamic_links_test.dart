@@ -26,6 +26,17 @@ void main() {
             return returnUrl;
           case 'DynamicLinkParameters#shortenUrl':
             return returnUrl;
+          case 'FirebaseDynamicLinks#retrieveDynamicLink':
+            return <dynamic, dynamic>{
+              'link': 'https://google.com',
+              'android': <dynamic, dynamic>{
+                'clickTimestamp': 1234567,
+                'minimumVersion': 12,
+              },
+              'ios': <dynamic, dynamic>{
+                'minimumVersion': 'Version 12',
+              },
+            };
           default:
             return null;
         }
@@ -33,11 +44,30 @@ void main() {
       log.clear();
     });
 
+    test('retrieveDynamicLink', () async {
+      final PendingDynamicLinkData data =
+          await FirebaseDynamicLinks.instance.retrieveDynamicLink();
+
+      expect(data.link, Uri.parse('https://google.com'));
+
+      expect(data.android.clickTimestamp, 1234567);
+      expect(data.android.minimumVersion, 12);
+
+      expect(data.ios.minimumVersion, 'Version 12');
+
+      expect(log, <Matcher>[
+        isMethodCall(
+          'FirebaseDynamicLinks#retrieveDynamicLink',
+          arguments: null,
+        )
+      ]);
+    });
+
     group('$DynamicLinkParameters', () {
       test('shortenUrl', () async {
         final Uri url = Uri.parse('google.com');
         final DynamicLinkParametersOptions options =
-            new DynamicLinkParametersOptions(
+            DynamicLinkParametersOptions(
                 shortDynamicLinkPathLength:
                     ShortDynamicLinkPathLength.unguessable);
 
@@ -58,10 +88,10 @@ void main() {
       });
 
       test('$AndroidParameters', () async {
-        final DynamicLinkParameters components = new DynamicLinkParameters(
+        final DynamicLinkParameters components = DynamicLinkParameters(
           domain: 'test-domain',
           link: Uri.parse('test-link.com'),
-          androidParameters: new AndroidParameters(
+          androidParameters: AndroidParameters(
             fallbackUrl: Uri.parse('test-url'),
             minimumVersion: 1,
             packageName: 'test-package',
@@ -112,10 +142,10 @@ void main() {
       });
 
       test('$DynamicLinkParametersOptions', () async {
-        final DynamicLinkParameters components = new DynamicLinkParameters(
+        final DynamicLinkParameters components = DynamicLinkParameters(
           domain: 'test-domain',
           link: Uri.parse('test-link.com'),
-          dynamicLinkParametersOptions: new DynamicLinkParametersOptions(
+          dynamicLinkParametersOptions: DynamicLinkParametersOptions(
               shortDynamicLinkPathLength: ShortDynamicLinkPathLength.short),
         );
 
@@ -166,10 +196,10 @@ void main() {
       });
 
       test('$GoogleAnalyticsParameters', () async {
-        final DynamicLinkParameters components = new DynamicLinkParameters(
+        final DynamicLinkParameters components = DynamicLinkParameters(
           domain: 'test-domain',
           link: Uri.parse('test-link.com'),
-          googleAnalyticsParameters: new GoogleAnalyticsParameters(
+          googleAnalyticsParameters: GoogleAnalyticsParameters(
             campaign: 'where',
             content: 'is',
             medium: 'my',
@@ -226,7 +256,7 @@ void main() {
       });
 
       test('$IosParameters', () async {
-        final DynamicLinkParameters components = new DynamicLinkParameters(
+        final DynamicLinkParameters components = DynamicLinkParameters(
           domain: 'test-domain',
           link: Uri.parse('test-link.com'),
           iosParameters: IosParameters(
@@ -292,11 +322,10 @@ void main() {
       });
 
       test('$ItunesConnectAnalyticsParameters', () async {
-        final DynamicLinkParameters components = new DynamicLinkParameters(
+        final DynamicLinkParameters components = DynamicLinkParameters(
           domain: 'test-domain',
           link: Uri.parse('test-link.com'),
-          itunesConnectAnalyticsParameters:
-              new ItunesConnectAnalyticsParameters(
+          itunesConnectAnalyticsParameters: ItunesConnectAnalyticsParameters(
             affiliateToken: 'hello',
             campaignToken: 'mister',
             providerToken: 'rose',
@@ -347,11 +376,11 @@ void main() {
       });
 
       test('$NavigationInfoParameters', () async {
-        final DynamicLinkParameters components = new DynamicLinkParameters(
+        final DynamicLinkParameters components = DynamicLinkParameters(
           domain: 'test-domain',
           link: Uri.parse('test-link.com'),
           navigationInfoParameters:
-              new NavigationInfoParameters(forcedRedirectEnabled: true),
+              NavigationInfoParameters(forcedRedirectEnabled: true),
         );
 
         await components.buildUrl();
@@ -394,7 +423,7 @@ void main() {
       });
 
       test('$SocialMetaTagParameters', () async {
-        final DynamicLinkParameters components = new DynamicLinkParameters(
+        final DynamicLinkParameters components = DynamicLinkParameters(
           domain: 'test-domain',
           link: Uri.parse('test-link.com'),
           socialMetaTagParameters: SocialMetaTagParameters(
